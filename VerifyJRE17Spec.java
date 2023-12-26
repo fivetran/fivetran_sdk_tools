@@ -1,4 +1,4 @@
-package tools.jdk;
+package fivetran_sdk_tools.jdk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
