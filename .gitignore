@@ -1,0 +1,10 @@
+**/.idea
+**/.ijwb
+*.iml
+*.jar
+*.zip
+*.tar
+bazel-*
+.DS_Store
+bin/*
+*.proto
