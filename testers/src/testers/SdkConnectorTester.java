@@ -187,9 +187,6 @@ public final class SdkConnectorTester {
             } else {
                 createSchemaFileForSelections(schemaResponse, defaultSchema, schemaSelectionsFilePath);
                 LOG.info("Schema selection file is generated");
-
-                LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
-                System.in.read();
             }
 
             LOG.info("Schema Selections:\n" + Files.readString(schemaSelectionsFilePath));

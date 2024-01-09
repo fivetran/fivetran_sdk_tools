@@ -186,7 +186,9 @@ public final class MockConnectorOutput implements AutoCloseable {
                         createTable = true;
                     } else {
                         if (existingType == DataType.UNSPECIFIED) {
-                            destination.addColumn(schemaTable, incomingColumnName, incomingType);
+                            if (!createTable) {
+                                destination.addColumn(schemaTable, incomingColumnName, incomingType);
+                            }
                         } else {
                             destination.changeColumnType(schemaTable, incomingColumnName, mergedType);
                         }
@@ -242,9 +244,11 @@ public final class MockConnectorOutput implements AutoCloseable {
             if (columns.stream().noneMatch(c -> c.getPrimaryKey() && c.getType() == DataType.UNSPECIFIED)) {
                 List<Column> specifiedColumns =
                         columns.stream().filter(c -> c.getType() != DataType.UNSPECIFIED).collect(Collectors.toList());
-                destination.createTable(schemaTable, specifiedColumns);
+                if (!specifiedColumns.isEmpty()) {
+                    destination.createTable(schemaTable, specifiedColumns);
+                }
             } else {
-                LOG.warning("Cannot create table with any UNSPECIFIED PK column(s)");
+                LOG.fine("Cannot create table with any UNSPECIFIED PK column(s)");
             }
 
             tables.put(schemaTable, columns);
