@@ -1,4 +1,4 @@
-FROM azul/zulu-openjdk:17.0.9
+FROM gcr.io/fivetran-donkeys/zulu-openjdk:17.0.7-17.42.19
 
 COPY run_sdk_destination_tester_deploy.jar /app/SdkDestinationTester.jar
 
