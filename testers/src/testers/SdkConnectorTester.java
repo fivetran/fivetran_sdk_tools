@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "2023.1103.1640";
+    private static final String VERSION = "024.0110.001";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
@@ -67,6 +67,12 @@ public final class SdkConnectorTester {
                 required = true,
                 description = "")
         String port;
+
+        @CommandLine.Option(
+                names = {"--interactive"},
+                description = "",
+                arity="1")
+        Boolean interactive = true;
     }
 
     public static void main(String[] args) throws IOException {
@@ -78,8 +84,12 @@ public final class SdkConnectorTester {
                         ? SdkConnectorClient.DEFAULT_GRPC_HOST
                         : System.getenv("GRPC_HOSTNAME");
 
-        new SdkConnectorTester()
-                .run(cliargs.workingDir, cliargs.defaultSchema, grpcHost, Integer.parseInt(cliargs.port));
+        new SdkConnectorTester().run(
+                cliargs.workingDir,
+                cliargs.defaultSchema,
+                cliargs.interactive,
+                grpcHost,
+                Integer.parseInt(cliargs.port));
     }
 
     static final ObjectMapper JSON = create();
@@ -138,10 +148,12 @@ public final class SdkConnectorTester {
         }
     }
 
-    public void run(String workingDir, String defaultSchema, String grpcHost, int grpcPort) {
+    public void run(String workingDir, String defaultSchema, boolean interactive,
+                    String grpcHost, int grpcPort) {
         LOG.info("Version: " + VERSION);
         LOG.info("Directory: " + workingDir);
         LOG.info("Default schema name: " + defaultSchema);
+        LOG.info("Interactive: " + interactive);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
 
@@ -187,6 +199,17 @@ public final class SdkConnectorTester {
             } else {
                 createSchemaFileForSelections(schemaResponse, defaultSchema, schemaSelectionsFilePath);
                 LOG.info("Schema selection file is generated");
+
+                if (interactive) {
+                    LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
+                    System.in.read();
+                } else {
+                    try {
+                        Files.deleteIfExists(schemaSelectionsFilePath);
+                    } catch (IOException e) {
+                        LOG.warning("Unable to delete file: " + schemaSelectionsFilePath);
+                    }
+                }
             }
 
             LOG.info("Schema Selections:\n" + Files.readString(schemaSelectionsFilePath));
