@@ -18,7 +18,7 @@ default_java_toolchain(
 java_test(
     name = "jre_version_17",
     srcs = ["VerifyJRE17Spec.java"],
-    test_class = "VerifyJRE17Spec",
+    test_class = "fivetran_sdk_tools.jdk.VerifyJRE17Spec",
     deps = [
         "@maven//:junit_junit",
         "@maven//:org_assertj_assertj_core",
