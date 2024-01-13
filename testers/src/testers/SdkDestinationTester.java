@@ -44,7 +44,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0112.001";
+    private static final String VERSION = "024.0113.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -450,6 +450,7 @@ public final class SdkDestinationTester {
             if (dataType instanceof String dataTypeStr) {
                 columnBuilder.setType(strToDataType(dataTypeStr.toUpperCase()));
             } else if (dataType instanceof Map) {
+                // Currently this is only for DECIMAL data type
                 Map<String, Object> dataTypeMap = (Map<String, Object>) dataType;
                 String strDataType = ((String) dataTypeMap.get("type")).toUpperCase();
                 if (!strDataType.equals("DECIMAL")) {
@@ -457,7 +458,9 @@ public final class SdkDestinationTester {
                 }
                 int precision = (int) dataTypeMap.get("precision");
                 int scale = (int) dataTypeMap.get("scale");
-                columnBuilder.setDecimal(DecimalParams.newBuilder()
+                columnBuilder
+                        .setType(DataType.DECIMAL)
+                        .setDecimal(DecimalParams.newBuilder()
                         .setPrecision(precision)
                         .setScale(scale)
                         .build());
