@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "024.0110.001";
+    private static final String VERSION = "024.0113.001";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
@@ -55,11 +55,11 @@ public final class SdkConnectorTester {
         String workingDir;
 
         @CommandLine.Option(
-                names = {"--default-schema"},
+                names = {"--destination-schema"},
                 required = true,
                 defaultValue = DEFAULT_SCHEMA,
                 description = "Service ID of the connector")
-        String defaultSchema;
+        String destinationSchema;
 
         @CommandLine.Option(
                 names = {"--port"},
@@ -86,7 +86,7 @@ public final class SdkConnectorTester {
 
         new SdkConnectorTester().run(
                 cliargs.workingDir,
-                cliargs.defaultSchema,
+                cliargs.destinationSchema,
                 cliargs.interactive,
                 grpcHost,
                 Integer.parseInt(cliargs.port));
@@ -148,11 +148,11 @@ public final class SdkConnectorTester {
         }
     }
 
-    public void run(String workingDir, String defaultSchema, boolean interactive,
+    public void run(String workingDir, String destinationSchema, boolean interactive,
                     String grpcHost, int grpcPort) {
         LOG.info("Version: " + VERSION);
         LOG.info("Directory: " + workingDir);
-        LOG.info("Default schema name: " + defaultSchema);
+        LOG.info("Destination schema: " + destinationSchema);
         LOG.info("Interactive: " + interactive);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
@@ -170,7 +170,7 @@ public final class SdkConnectorTester {
                 MockConnectorOutput output =
                         new MockConnectorOutput(
                                 destination,
-                                defaultSchema,
+                                destinationSchema,
                                 newStateJson -> stateSaver(newStateJson, Paths.get(workingDir, STATE_FILE)),
                                 () -> stateLoader(Paths.get(workingDir, STATE_FILE)))) {
 
@@ -197,7 +197,7 @@ public final class SdkConnectorTester {
             if (Files.exists(schemaSelectionsFilePath)) {
                 // TODO: Handle changes in SchemaResponse
             } else {
-                createSchemaFileForSelections(schemaResponse, defaultSchema, schemaSelectionsFilePath);
+                createSchemaFileForSelections(schemaResponse, destinationSchema, schemaSelectionsFilePath);
                 LOG.info("Schema selection file is generated");
 
                 if (interactive) {
@@ -213,13 +213,13 @@ public final class SdkConnectorTester {
             }
 
             LOG.info("Schema Selections:\n" + Files.readString(schemaSelectionsFilePath));
-            Selection selection = readSchemaFileForSelections(schemaSelectionsFilePath, defaultSchema);
+            Selection selection = readSchemaFileForSelections(schemaSelectionsFilePath, destinationSchema);
             boolean supported =
                     SdkConnectorClient.walkSchemaResponse(
                             schemaResponse,
                             (schema, tables) -> {
                                 for (Table table : tables) {
-                                    String schemaName = schema.orElse(defaultSchema);
+                                    String schemaName = schema.orElse(destinationSchema);
                                     if (isIncluded(schemaName, table.getName(), selection)) {
                                         output.handleSchemaChange(schemaName, table);
                                     }

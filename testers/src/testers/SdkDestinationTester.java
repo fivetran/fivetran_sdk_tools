@@ -15,16 +15,11 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
 import client.connector.SdkConnectorClient;
 import client.destination.SdkWriterClient;
+import fivetran_sdk.*;
 import testers.util.InstantFormattedSerializer;
 import testers.util.SdkCrypto;
 import com.github.luben.zstd.ZstdOutputStream;
 import com.google.protobuf.ByteString;
-import fivetran_sdk.Column;
-import fivetran_sdk.ConfigurationFormResponse;
-import fivetran_sdk.ConfigurationTest;
-import fivetran_sdk.DataType;
-import fivetran_sdk.DescribeTableResponse;
-import fivetran_sdk.Table;
 import io.grpc.ManagedChannel;
 
 import java.io.*;
@@ -38,15 +33,9 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.SecretKey;
 import picocli.CommandLine;
@@ -55,14 +44,15 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0110.001";
+    private static final String VERSION = "024.0112.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
     private static final String DEFAULT_NULL_STRING = "null-m8yilkvPsNulehxl2G6pmSQ3G3WWdLP";
     private static final String DEFAULT_UPDATE_UNMODIFIED = "unmod-NcK9NIjPUutCsz4mjOQQztbnwnE1sY3";
-    private static final String SYNCED_COLUMN = "_fivetran_synced";
-    private static final String DELETED_COLUMN = "_fivetran_deleted";
+    private static final String SYNCED_SYS_COLUMN = "_fivetran_synced";
+    private static final String DELETED_SYS_COLUMN = "_fivetran_deleted";
+    private static final String ID_SYS_COLUMN = "_fivetran_id";
 
     private SdkDestinationTester() {}
 
@@ -82,6 +72,12 @@ public final class SdkDestinationTester {
         String port;
 
         @CommandLine.Option(
+                names = {"--input-file"},
+                defaultValue = "",
+                description = "Use the input file passed in to generate a batch file")
+        String inputFile;
+
+        @CommandLine.Option(
                 names = {"--plain-text"},
                 description = "Disable encryption and compression")
         boolean plainText = false;
@@ -99,14 +95,24 @@ public final class SdkDestinationTester {
         String grpcWorkingDir = (System.getenv("WORKING_DIR") == null) ?
                 cliargs.workingDir : System.getenv("WORKING_DIR");
 
-        new SdkDestinationTester().run(cliargs.workingDir, grpcWorkingDir, grpcHost, Integer.parseInt(cliargs.port), cliargs.plainText);
+        new SdkDestinationTester().run(
+                cliargs.workingDir,
+                grpcWorkingDir,
+                grpcHost,
+                Integer.parseInt(cliargs.port),
+                cliargs.plainText,
+                cliargs.inputFile);
     }
 
-    public void run(String workingDir, String grpcWorkingDir, String grpcHost, int grpcPort, boolean plainText) throws IOException {
+    public void run(
+            String workingDir, String grpcWorkingDir, String grpcHost, int grpcPort, boolean plainText, String inputFile) throws IOException {
         LOG.info("Version: " + VERSION);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
         LOG.info("Working Directory: " + grpcWorkingDir);
+        if (!inputFile.isEmpty()) {
+            LOG.info("Input file: " + inputFile);
+        }
         LOG.info("NULL string: " + DEFAULT_NULL_STRING);
         LOG.info("UNMODIFIED string: " + DEFAULT_UPDATE_UNMODIFIED);
         LOG.info("Compression: " + ((plainText) ? "NONE" : "ZSTD"));
@@ -117,10 +123,15 @@ public final class SdkDestinationTester {
         SdkWriterClient client = new SdkWriterClient(channel);
 
         File directoryPath = new File(workingDir);
-        File[] filesList = directoryPath.listFiles();
-        if (filesList == null) {
-            LOG.severe("ERROR: Directory is empty");
-            System.exit(1);
+        File[] filesList;
+        if (!inputFile.isEmpty()) {
+            filesList = new File[]{ Paths.get(workingDir, inputFile).toFile() };
+        } else {
+            filesList = directoryPath.listFiles();
+            if (filesList == null) {
+                LOG.severe("ERROR: Directory is empty");
+                System.exit(1);
+            }
         }
 
         LOG.info("Fetching configuration form");
@@ -149,15 +160,15 @@ public final class SdkDestinationTester {
             if (file.isFile() && !file.getName().equals(CONFIG_FILE) && file.getName().endsWith(".json")) {
                 LinkedHashMap<String, Object> batch = mapper.readValue(file, new TypeReference<>() {});
                 String filename = file.getName().replaceFirst("[.][^.]+$", "");
-                writeBatch(filename, batch, client, workingDir, grpcWorkingDir, creds, plainText);
+                executeInputFile(filename, batch, client, workingDir, grpcWorkingDir, creds, plainText);
             }
         }
 
         System.exit(0);
     }
 
-    /** Executes the elements of the batch in the same order as Fivetran core */
-    private void writeBatch(
+    /** Executes the elements of the input file in the same order as Fivetran core */
+    private void executeInputFile(
             String batchName,
             Map<String, Object> batch,
             SdkWriterClient client,
@@ -184,13 +195,14 @@ public final class SdkDestinationTester {
                 DescribeTableResponse response = client.describeTable(DEFAULT_SCHEMA, tableName, config);
 
                 if (response.hasFailure()) {
-                    LOG.warning(String.format("Failed to fetch table `%s`: %s", tableName, response.getFailure()));
+                    throw new RuntimeException(
+                            String.format("Failed to fetch table `%s`: %s", tableName, response.getFailure()));
                 } else if (response.getNotFound()) {
                     LOG.info(String.format("Table does not exist at the destination: %s", tableName));
                 } else {
                     Table table = response.getTable();
-                    LOG.info(String.format("Table: %s\n%s", tableName, table));
                     tables.put(tableName, table);
+                    LOG.info(String.format("Describe Table: %s\n%s", tableName, table));
                 }
             }
         }
@@ -200,7 +212,7 @@ public final class SdkDestinationTester {
             for (var tableEntry : ((Map<String, Object>) batch.get("create_table")).entrySet()) {
                 String tableName = tableEntry.getKey();
                 if (tables.containsKey(tableName)) {
-                    LOG.warning("Table already exists: " + tableName);
+                    LOG.fine("Table already exists: " + tableName);
                 }
 
                 if (!tableDMLs.containsKey(tableName)) {
@@ -211,9 +223,10 @@ public final class SdkDestinationTester {
 
                 Optional<String> result = client.createTable(DEFAULT_SCHEMA, table, config);
                 if (result.isPresent()) {
-                    LOG.severe(result.get());
+                    throw new RuntimeException(result.get());
                 } else {
                     tables.put(tableName, table);
+                    LOG.info(String.format("Create Table succeeded: %s", tableName));
                 }
             }
         }
@@ -231,9 +244,10 @@ public final class SdkDestinationTester {
 
                 Optional<String> result = client.alterTable(DEFAULT_SCHEMA, table, config);
                 if (result.isPresent()) {
-                    LOG.severe(result.get());
+                    throw new RuntimeException(result.get());
                 } else {
                     tables.put(tableName, table);
+                    LOG.info(String.format("Alter Table succeeded: %s", tableName));
                 }
             }
         }
@@ -253,7 +267,7 @@ public final class SdkDestinationTester {
                 List<Column> columns = tables.get(table).getColumnsList();
                 CsvSchema csvSchema = buildCsvSchema(columns);
 
-                Map<String, ByteString> keys = new HashMap();
+                Map<String, ByteString> keys = new HashMap<>();
                 List<String> replaceList = new ArrayList<>();
                 List<String> updateList = new ArrayList<>();
                 List<String> deleteList = new ArrayList<>();
@@ -291,17 +305,19 @@ public final class SdkDestinationTester {
                         "CSV_ZSTD",
                         DEFAULT_NULL_STRING,
                         DEFAULT_UPDATE_UNMODIFIED);
+                LOG.info(String.format("WriteBatch succeeded: %s", table));
 
                 // Then truncate if any
                 if (tableTruncates.containsKey(table)) {
                     client.truncate(
                             DEFAULT_SCHEMA,
                             table,
-                            DELETED_COLUMN,
-                            SYNCED_COLUMN,
+                            DELETED_SYS_COLUMN,
+                            SYNCED_SYS_COLUMN,
                             tableTruncates.get(table),
                             true,
                             config);
+                    LOG.info(String.format("Truncate succeeded: %s", table));
                 }
             }
         }
@@ -321,18 +337,48 @@ public final class SdkDestinationTester {
                 SequenceWriter sw =
                         CSV.writer(csvSchema).writeValues(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
 
+            Set<String> columnNames = columns.stream().map(Column::getName).collect(Collectors.toSet());
             Instant now = Instant.now();
             for (var row : rows) {
                 Map<String, Object> data = (Map<String, Object>) row;
 
-                data.put(SYNCED_COLUMN, now);
+                if (data.containsKey(SYNCED_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "System column '%s' is found in op '%s' for table: %s",
+                                    SYNCED_SYS_COLUMN, opName, table));
+                }
+
+                if (data.containsKey(DELETED_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "System column '%s' is found in op '%s' for table: %s",
+                                    DELETED_SYS_COLUMN, opName, table));
+                }
+
+                if (data.containsKey(ID_SYS_COLUMN) && !columnNames.contains(ID_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "System column '%s' is found in op '%s' for table: %s",
+                                    ID_SYS_COLUMN, opName, table));
+                }
+
+
+                if (!data.containsKey(ID_SYS_COLUMN) && columnNames.contains(ID_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "Column '_fivetran_id' is missing in op '%s' for pkeyless table: %s",
+                                    opName, table));
+                }
+
+                data.put(SYNCED_SYS_COLUMN, now);
 
                 if (opName.equals("upsert")) {
-                    data.put(DELETED_COLUMN, false);
+                    data.put(DELETED_SYS_COLUMN, false);
                 } else if (opName.equals("update")) {
-                    data.put(DELETED_COLUMN, false);
+                    data.put(DELETED_SYS_COLUMN, false);
                 } else if (opName.equals("delete")) {
-                    data.put(DELETED_COLUMN, true);
+                    data.put(DELETED_SYS_COLUMN, true);
                 }
 
                 for (var c : columns) {
@@ -373,8 +419,6 @@ public final class SdkDestinationTester {
         for (Column c : columns) {
             builder.addColumn(c.getName(), csvType(c.getType()));
         }
-        builder.addColumn(DELETED_COLUMN, CsvSchema.ColumnType.BOOLEAN);
-        builder.addColumn(SYNCED_COLUMN, CsvSchema.ColumnType.STRING);
         return builder.setUseHeader(true).setNullValue(DEFAULT_NULL_STRING).build();
     }
 
@@ -394,19 +438,54 @@ public final class SdkDestinationTester {
         for (var columnEntry : ((Map<String, Object>) tableEntry.get("columns")).entrySet()) {
             String columnName = columnEntry.getKey();
 
-            if (columnName.equals(DELETED_COLUMN) || columnName.equals(SYNCED_COLUMN)) {
+            if (columnName.equals(DELETED_SYS_COLUMN) ||
+                    columnName.equals(SYNCED_SYS_COLUMN) ||
+                    columnName.equals(ID_SYS_COLUMN)) {
                 throw new RuntimeException(String.format("%s is a Fivetran system column name", columnName));
             }
 
-            String stringType = (String) columnEntry.getValue();
-            Column.Builder columnBuilder =
-                    Column.newBuilder().setName(columnName).setType(strToDataType(stringType.toUpperCase()));
+            Column.Builder columnBuilder = Column.newBuilder().setName(columnName);
+            Object dataType = columnEntry.getValue();
+
+            if (dataType instanceof String dataTypeStr) {
+                columnBuilder.setType(strToDataType(dataTypeStr.toUpperCase()));
+            } else if (dataType instanceof Map) {
+                Map<String, Object> dataTypeMap = (Map<String, Object>) dataType;
+                String strDataType = ((String) dataTypeMap.get("type")).toUpperCase();
+                if (!strDataType.equals("DECIMAL")) {
+                    throw new RuntimeException("Expecting DECIMAL data type");
+                }
+                int precision = (int) dataTypeMap.get("precision");
+                int scale = (int) dataTypeMap.get("scale");
+                columnBuilder.setDecimal(DecimalParams.newBuilder()
+                        .setPrecision(precision)
+                        .setScale(scale)
+                        .build());
+            } else {
+                throw new RuntimeException("Unexpected data type object");
+            }
 
             if (pkeys.contains(columnName)) {
                 columnBuilder.setPrimaryKey(true);
             }
 
             columns.add(columnBuilder.build());
+        }
+
+        // Add system columns
+        columns.add(Column.newBuilder()
+                .setName(SYNCED_SYS_COLUMN)
+                .setType(DataType.UTC_DATETIME)
+                .build());
+        columns.add(Column.newBuilder()
+                .setName(DELETED_SYS_COLUMN)
+                .setType(DataType.BOOLEAN)
+                .build());
+        if (pkeys.isEmpty()) {
+            columns.add(Column.newBuilder()
+                    .setName(ID_SYS_COLUMN)
+                    .setType(DataType.STRING)
+                    .build());
         }
 
         return tableBuilder.addAllColumns(columns).build();
@@ -481,7 +560,7 @@ public final class SdkDestinationTester {
 
                 for (String table : (Collection<String>) op) {
                     if (tableTruncates.containsKey(table)) {
-                        LOG.warning("Another truncate for table: " + table);
+                        LOG.fine("Another truncate for table: " + table);
                     }
 
                     tableTruncates.put(table, now);
