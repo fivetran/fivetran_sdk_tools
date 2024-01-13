@@ -55,7 +55,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0110.001";
+    private static final String VERSION = "024.0112.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -82,6 +82,12 @@ public final class SdkDestinationTester {
         String port;
 
         @CommandLine.Option(
+                names = {"--input-file"},
+                defaultValue = "",
+                description = "Use the input file passed in to generate a batch file")
+        String inputFile;
+
+        @CommandLine.Option(
                 names = {"--plain-text"},
                 description = "Disable encryption and compression")
         boolean plainText = false;
@@ -99,14 +105,24 @@ public final class SdkDestinationTester {
         String grpcWorkingDir = (System.getenv("WORKING_DIR") == null) ?
                 cliargs.workingDir : System.getenv("WORKING_DIR");
 
-        new SdkDestinationTester().run(cliargs.workingDir, grpcWorkingDir, grpcHost, Integer.parseInt(cliargs.port), cliargs.plainText);
+        new SdkDestinationTester().run(
+                cliargs.workingDir,
+                grpcWorkingDir,
+                grpcHost,
+                Integer.parseInt(cliargs.port),
+                cliargs.plainText,
+                cliargs.inputFile);
     }
 
-    public void run(String workingDir, String grpcWorkingDir, String grpcHost, int grpcPort, boolean plainText) throws IOException {
+    public void run(
+            String workingDir, String grpcWorkingDir, String grpcHost, int grpcPort, boolean plainText, String inputFile) throws IOException {
         LOG.info("Version: " + VERSION);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
         LOG.info("Working Directory: " + grpcWorkingDir);
+        if (!inputFile.isEmpty()) {
+            LOG.info("Input file: " + inputFile);
+        }
         LOG.info("NULL string: " + DEFAULT_NULL_STRING);
         LOG.info("UNMODIFIED string: " + DEFAULT_UPDATE_UNMODIFIED);
         LOG.info("Compression: " + ((plainText) ? "NONE" : "ZSTD"));
@@ -117,10 +133,15 @@ public final class SdkDestinationTester {
         SdkWriterClient client = new SdkWriterClient(channel);
 
         File directoryPath = new File(workingDir);
-        File[] filesList = directoryPath.listFiles();
-        if (filesList == null) {
-            LOG.severe("ERROR: Directory is empty");
-            System.exit(1);
+        File[] filesList;
+        if (!inputFile.isEmpty()) {
+            filesList = new File[]{ Paths.get(workingDir, inputFile).toFile() };
+        } else {
+            filesList = directoryPath.listFiles();
+            if (filesList == null) {
+                LOG.severe("ERROR: Directory is empty");
+                System.exit(1);
+            }
         }
 
         LOG.info("Fetching configuration form");
