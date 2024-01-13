@@ -208,6 +208,7 @@ public final class SdkDestinationTester {
                 } else {
                     Table table = response.getTable();
                     tables.put(tableName, table);
+                    LOG.info(String.format("Describe Table: %s\n%s", tableName, table));
                 }
             }
         }
@@ -217,7 +218,7 @@ public final class SdkDestinationTester {
             for (var tableEntry : ((Map<String, Object>) batch.get("create_table")).entrySet()) {
                 String tableName = tableEntry.getKey();
                 if (tables.containsKey(tableName)) {
-                    LOG.warning("Table already exists: " + tableName);
+                    LOG.fine("Table already exists: " + tableName);
                 }
 
                 if (!tableDMLs.containsKey(tableName)) {
@@ -231,6 +232,7 @@ public final class SdkDestinationTester {
                     throw new RuntimeException(result.get());
                 } else {
                     tables.put(tableName, table);
+                    LOG.info(String.format("Create Table succeeded: %s", tableName));
                 }
             }
         }
@@ -251,6 +253,7 @@ public final class SdkDestinationTester {
                     throw new RuntimeException(result.get());
                 } else {
                     tables.put(tableName, table);
+                    LOG.info(String.format("Alter Table succeeded: %s", tableName));
                 }
             }
         }
@@ -308,6 +311,7 @@ public final class SdkDestinationTester {
                         "CSV_ZSTD",
                         DEFAULT_NULL_STRING,
                         DEFAULT_UPDATE_UNMODIFIED);
+                LOG.info(String.format("WriteBatch succeeded: %s", table));
 
                 // Then truncate if any
                 if (tableTruncates.containsKey(table)) {
@@ -319,6 +323,7 @@ public final class SdkDestinationTester {
                             tableTruncates.get(table),
                             true,
                             config);
+                    LOG.info(String.format("Truncate succeeded: %s", table));
                 }
             }
         }
@@ -517,7 +522,7 @@ public final class SdkDestinationTester {
 
                 for (String table : (Collection<String>) op) {
                     if (tableTruncates.containsKey(table)) {
-                        LOG.warning("Another truncate for table: " + table);
+                        LOG.fine("Another truncate for table: " + table);
                     }
 
                     tableTruncates.put(table, now);
