@@ -15,16 +15,11 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateSerializer;
 import client.connector.SdkConnectorClient;
 import client.destination.SdkWriterClient;
+import fivetran_sdk.*;
 import testers.util.InstantFormattedSerializer;
 import testers.util.SdkCrypto;
 import com.github.luben.zstd.ZstdOutputStream;
 import com.google.protobuf.ByteString;
-import fivetran_sdk.Column;
-import fivetran_sdk.ConfigurationFormResponse;
-import fivetran_sdk.ConfigurationTest;
-import fivetran_sdk.DataType;
-import fivetran_sdk.DescribeTableResponse;
-import fivetran_sdk.Table;
 import io.grpc.ManagedChannel;
 
 import java.io.*;
@@ -171,15 +166,15 @@ public final class SdkDestinationTester {
             if (file.isFile() && !file.getName().equals(CONFIG_FILE) && file.getName().endsWith(".json")) {
                 LinkedHashMap<String, Object> batch = mapper.readValue(file, new TypeReference<>() {});
                 String filename = file.getName().replaceFirst("[.][^.]+$", "");
-                writeBatch(filename, batch, client, workingDir, grpcWorkingDir, creds, plainText);
+                executeInputFile(filename, batch, client, workingDir, grpcWorkingDir, creds, plainText);
             }
         }
 
         System.exit(0);
     }
 
-    /** Executes the elements of the batch in the same order as Fivetran core */
-    private void writeBatch(
+    /** Executes the elements of the input file in the same order as Fivetran core */
+    private void executeInputFile(
             String batchName,
             Map<String, Object> batch,
             SdkWriterClient client,
@@ -212,7 +207,6 @@ public final class SdkDestinationTester {
                     LOG.info(String.format("Table does not exist at the destination: %s", tableName));
                 } else {
                     Table table = response.getTable();
-                    LOG.info(String.format("Table: %s\n%s", tableName, table));
                     tables.put(tableName, table);
                 }
             }
@@ -423,9 +417,26 @@ public final class SdkDestinationTester {
                 throw new RuntimeException(String.format("%s is a Fivetran system column name", columnName));
             }
 
-            String stringType = (String) columnEntry.getValue();
-            Column.Builder columnBuilder =
-                    Column.newBuilder().setName(columnName).setType(strToDataType(stringType.toUpperCase()));
+            Column.Builder columnBuilder = Column.newBuilder().setName(columnName);
+            Object dataType = columnEntry.getValue();
+
+            if (dataType instanceof String dataTypeStr) {
+                columnBuilder.setType(strToDataType(dataTypeStr.toUpperCase()));
+            } else if (dataType instanceof Map) {
+                Map<String, Object> dataTypeMap = (Map<String, Object>) dataType;
+                String strDataType = ((String) dataTypeMap.get("type")).toUpperCase();
+                if (!strDataType.equals("DECIMAL")) {
+                    throw new RuntimeException("Expecting DECIMAL data type");
+                }
+                int precision = (int) dataTypeMap.get("precision");
+                int scale = (int) dataTypeMap.get("scale");
+                columnBuilder.setDecimal(DecimalParams.newBuilder()
+                        .setPrecision(precision)
+                        .setScale(scale)
+                        .build());
+            } else {
+                throw new RuntimeException("Unexpected data type object");
+            }
 
             if (pkeys.contains(columnName)) {
                 columnBuilder.setPrimaryKey(true);
