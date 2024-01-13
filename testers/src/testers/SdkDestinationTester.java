@@ -61,8 +61,9 @@ public final class SdkDestinationTester {
     private static final String DEFAULT_SCHEMA = "tester";
     private static final String DEFAULT_NULL_STRING = "null-m8yilkvPsNulehxl2G6pmSQ3G3WWdLP";
     private static final String DEFAULT_UPDATE_UNMODIFIED = "unmod-NcK9NIjPUutCsz4mjOQQztbnwnE1sY3";
-    private static final String SYNCED_COLUMN = "_fivetran_synced";
-    private static final String DELETED_COLUMN = "_fivetran_deleted";
+    private static final String SYNCED_SYS_COLUMN = "_fivetran_synced";
+    private static final String DELETED_SYS_COLUMN = "_fivetran_deleted";
+    private static final String ID_SYS_COLUMN = "_fivetran_id";
 
     private SdkDestinationTester() {}
 
@@ -319,8 +320,8 @@ public final class SdkDestinationTester {
                     client.truncate(
                             DEFAULT_SCHEMA,
                             table,
-                            DELETED_COLUMN,
-                            SYNCED_COLUMN,
+                            DELETED_SYS_COLUMN,
+                            SYNCED_SYS_COLUMN,
                             tableTruncates.get(table),
                             true,
                             config);
@@ -347,14 +348,14 @@ public final class SdkDestinationTester {
             for (var row : rows) {
                 Map<String, Object> data = (Map<String, Object>) row;
 
-                data.put(SYNCED_COLUMN, now);
+                data.put(SYNCED_SYS_COLUMN, now);
 
                 if (opName.equals("upsert")) {
-                    data.put(DELETED_COLUMN, false);
+                    data.put(DELETED_SYS_COLUMN, false);
                 } else if (opName.equals("update")) {
-                    data.put(DELETED_COLUMN, false);
+                    data.put(DELETED_SYS_COLUMN, false);
                 } else if (opName.equals("delete")) {
-                    data.put(DELETED_COLUMN, true);
+                    data.put(DELETED_SYS_COLUMN, true);
                 }
 
                 for (var c : columns) {
@@ -395,8 +396,8 @@ public final class SdkDestinationTester {
         for (Column c : columns) {
             builder.addColumn(c.getName(), csvType(c.getType()));
         }
-        builder.addColumn(DELETED_COLUMN, CsvSchema.ColumnType.BOOLEAN);
-        builder.addColumn(SYNCED_COLUMN, CsvSchema.ColumnType.STRING);
+        builder.addColumn(DELETED_SYS_COLUMN, CsvSchema.ColumnType.BOOLEAN);
+        builder.addColumn(SYNCED_SYS_COLUMN, CsvSchema.ColumnType.STRING);
         return builder.setUseHeader(true).setNullValue(DEFAULT_NULL_STRING).build();
     }
 
@@ -416,7 +417,9 @@ public final class SdkDestinationTester {
         for (var columnEntry : ((Map<String, Object>) tableEntry.get("columns")).entrySet()) {
             String columnName = columnEntry.getKey();
 
-            if (columnName.equals(DELETED_COLUMN) || columnName.equals(SYNCED_COLUMN)) {
+            if (columnName.equals(DELETED_SYS_COLUMN) ||
+                    columnName.equals(SYNCED_SYS_COLUMN) ||
+                    columnName.equals(ID_SYS_COLUMN)) {
                 throw new RuntimeException(String.format("%s is a Fivetran system column name", columnName));
             }
 
