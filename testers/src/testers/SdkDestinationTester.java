@@ -205,7 +205,8 @@ public final class SdkDestinationTester {
                 DescribeTableResponse response = client.describeTable(DEFAULT_SCHEMA, tableName, config);
 
                 if (response.hasFailure()) {
-                    LOG.warning(String.format("Failed to fetch table `%s`: %s", tableName, response.getFailure()));
+                    throw new RuntimeException(
+                            String.format("Failed to fetch table `%s`: %s", tableName, response.getFailure()));
                 } else if (response.getNotFound()) {
                     LOG.info(String.format("Table does not exist at the destination: %s", tableName));
                 } else {
@@ -232,7 +233,7 @@ public final class SdkDestinationTester {
 
                 Optional<String> result = client.createTable(DEFAULT_SCHEMA, table, config);
                 if (result.isPresent()) {
-                    LOG.severe(result.get());
+                    throw new RuntimeException(result.get());
                 } else {
                     tables.put(tableName, table);
                 }
@@ -252,7 +253,7 @@ public final class SdkDestinationTester {
 
                 Optional<String> result = client.alterTable(DEFAULT_SCHEMA, table, config);
                 if (result.isPresent()) {
-                    LOG.severe(result.get());
+                    throw new RuntimeException(result.get());
                 } else {
                     tables.put(tableName, table);
                 }
