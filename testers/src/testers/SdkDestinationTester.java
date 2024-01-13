@@ -33,15 +33,9 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.SecretKey;
 import picocli.CommandLine;
@@ -273,7 +267,7 @@ public final class SdkDestinationTester {
                 List<Column> columns = tables.get(table).getColumnsList();
                 CsvSchema csvSchema = buildCsvSchema(columns);
 
-                Map<String, ByteString> keys = new HashMap();
+                Map<String, ByteString> keys = new HashMap<>();
                 List<String> replaceList = new ArrayList<>();
                 List<String> updateList = new ArrayList<>();
                 List<String> deleteList = new ArrayList<>();
@@ -343,9 +337,39 @@ public final class SdkDestinationTester {
                 SequenceWriter sw =
                         CSV.writer(csvSchema).writeValues(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
 
+            Set<String> columnNames = columns.stream().map(Column::getName).collect(Collectors.toSet());
             Instant now = Instant.now();
             for (var row : rows) {
                 Map<String, Object> data = (Map<String, Object>) row;
+
+                if (data.containsKey(SYNCED_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "System column '%s' is found in op '%s' for table: %s",
+                                    SYNCED_SYS_COLUMN, opName, table));
+                }
+
+                if (data.containsKey(DELETED_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "System column '%s' is found in op '%s' for table: %s",
+                                    DELETED_SYS_COLUMN, opName, table));
+                }
+
+                if (data.containsKey(ID_SYS_COLUMN) && !columnNames.contains(ID_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "System column '%s' is found in op '%s' for table: %s",
+                                    ID_SYS_COLUMN, opName, table));
+                }
+
+
+                if (!data.containsKey(ID_SYS_COLUMN) && columnNames.contains(ID_SYS_COLUMN)) {
+                    throw new RuntimeException(
+                            String.format(
+                                    "Column '_fivetran_id' is missing in op '%s' for pkeyless table: %s",
+                                    opName, table));
+                }
 
                 data.put(SYNCED_SYS_COLUMN, now);
 
@@ -395,8 +419,6 @@ public final class SdkDestinationTester {
         for (Column c : columns) {
             builder.addColumn(c.getName(), csvType(c.getType()));
         }
-        builder.addColumn(DELETED_SYS_COLUMN, CsvSchema.ColumnType.BOOLEAN);
-        builder.addColumn(SYNCED_SYS_COLUMN, CsvSchema.ColumnType.STRING);
         return builder.setUseHeader(true).setNullValue(DEFAULT_NULL_STRING).build();
     }
 
@@ -448,6 +470,22 @@ public final class SdkDestinationTester {
             }
 
             columns.add(columnBuilder.build());
+        }
+
+        // Add system columns
+        columns.add(Column.newBuilder()
+                .setName(SYNCED_SYS_COLUMN)
+                .setType(DataType.UTC_DATETIME)
+                .build());
+        columns.add(Column.newBuilder()
+                .setName(DELETED_SYS_COLUMN)
+                .setType(DataType.BOOLEAN)
+                .build());
+        if (pkeys.isEmpty()) {
+            columns.add(Column.newBuilder()
+                    .setName(ID_SYS_COLUMN)
+                    .setType(DataType.STRING)
+                    .build());
         }
 
         return tableBuilder.addAllColumns(columns).build();
