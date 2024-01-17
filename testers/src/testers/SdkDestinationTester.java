@@ -44,7 +44,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0113.001";
+    private static final String VERSION = "024.0116.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -488,6 +488,7 @@ public final class SdkDestinationTester {
             columns.add(Column.newBuilder()
                     .setName(ID_SYS_COLUMN)
                     .setType(DataType.STRING)
+                    .setPrimaryKey(true)
                     .build());
         }
 
