@@ -170,7 +170,7 @@ public final class MockConnectorOutput implements AutoCloseable {
                 tables.get(schemaTable).stream().collect(Collectors.toMap(Column::getName, Function.identity())) :
                 new HashMap<>();
 
-        if (existingColumns.isEmpty()) {
+        if (!tableExists) {
             createTable = true;
         }
 
