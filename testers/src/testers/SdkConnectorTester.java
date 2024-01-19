@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "024.0113.001";
+    private static final String VERSION = "024.0118.001";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
@@ -157,6 +157,8 @@ public final class SdkConnectorTester {
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
 
+        Path schemaSelectionsFilePath = Paths.get(workingDir, SCHEMA_SELECTION_FILE);
+
         ManagedChannel channel = SdkConnectorClient.createChannel(grpcHost, grpcPort);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> SdkConnectorClient.closeChannel(channel)));
         SdkConnectorClient client = new SdkConnectorClient(channel);
@@ -193,7 +195,6 @@ public final class SdkConnectorTester {
             LOG.info("Previous state:\n" + stateJson);
 
             SchemaResponse schemaResponse = client.schema(creds, stateJson);
-            Path schemaSelectionsFilePath = Paths.get(workingDir, SCHEMA_SELECTION_FILE);
             if (Files.exists(schemaSelectionsFilePath)) {
                 // TODO: Handle changes in SchemaResponse
             } else {
@@ -203,12 +204,6 @@ public final class SdkConnectorTester {
                 if (interactive) {
                     LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
                     System.in.read();
-                } else {
-                    try {
-                        Files.deleteIfExists(schemaSelectionsFilePath);
-                    } catch (IOException e) {
-                        LOG.warning("Unable to delete file: " + schemaSelectionsFilePath);
-                    }
                 }
             }
 
@@ -236,6 +231,14 @@ public final class SdkConnectorTester {
 
         } catch (Throwable e) {
             LOG.log(Level.SEVERE, "Sync FAILED", e);
+        } finally {
+            if (!interactive) {
+                try {
+                    Files.deleteIfExists(schemaSelectionsFilePath);
+                } catch (IOException e) {
+                    LOG.warning("Unable to delete file: " + schemaSelectionsFilePath);
+                }
+            }
         }
 
         System.exit(0);
