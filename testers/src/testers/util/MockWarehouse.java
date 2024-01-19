@@ -104,38 +104,20 @@ public final class MockWarehouse implements AutoCloseable {
     public void upsert(SchemaTable schemaTable, List<Column> columns, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Upsert]: %s  Data: %s", schemaTable, dataMap));
 
-        List<String> pkeys = getPrimaryKeys(columns);
         String columnNames = dataMap.keySet().stream().map(MockWarehouse::renamer).collect(joining(","));
         String values = String.join(",", valueTypeToString(dataMap).values());
-        String updateOnConflict =
-                dataMap.keySet()
-                        .stream()
-                        .filter(col -> !getPrimaryKeys(columns).contains(col))
-                        .map(col -> String.format("%s = excluded.%s", renamer(col), renamer(col)))
-                        .collect(joining(","));
-
-        String sqlUpsert =
-                "INSERT INTO "
-                        + schemaTable.toString(MockWarehouse::renamer)
-                        + "("
-                        + columnNames
-                        + ") VALUES ("
-                        + values
-                        + ") ON CONFLICT ("
-                        + String.join(",", pkeys)
-                        + ") DO UPDATE SET "
-                        + updateOnConflict;
+        List<String> pkeys = getPrimaryKeys(columns);
+        String sqlUpsert = String.format("INSERT %s INTO %s (%s) VALUES (%s)",
+                pkeys.isEmpty() ? "" : "OR REPLACE",
+                schemaTable.toString(MockWarehouse::renamer),
+                columnNames,
+                values);
 
         try (Connection c = getConnection();
                 Statement s = c.createStatement()) {
             s.execute(sqlUpsert);
         } catch (SQLException e) {
-            // TODO: duckdb < 0.7.0 does not support UPSERT operation so we need to do it manually
-            if (e.getMessage().contains("Constraint Error: Duplicate key")) {
-                update(schemaTable, columns, dataMap);
-            } else {
-                throw new RuntimeException(e);
-            }
+            throw new RuntimeException(e);
         }
     }
 
@@ -290,14 +272,12 @@ public final class MockWarehouse implements AutoCloseable {
                                         .map(c -> String.format("%s %s", c.getName(), sqlType(c)))
                                         .collect(joining(","));
                         String pkeys = String.join(",", getPrimaryKeys(columns));
+                        String pkeyClause = (pkeys.isEmpty()) ? "" : ", PRIMARY KEY(" + pkeys + ")";
                         String sqlCreateTable =
-                                "CREATE TABLE IF NOT EXISTS "
-                                        + schemaTable.toString(MockWarehouse::renamer)
-                                        + " ("
-                                        + columnTypes
-                                        + ", PRIMARY KEY("
-                                        + pkeys
-                                        + "))";
+                                String.format("CREATE TABLE IF NOT EXISTS %s (%s%s)",
+                                        schemaTable.toString(MockWarehouse::renamer),
+                                        columnTypes,
+                                        pkeyClause);
                         s.execute(sqlCreateTable);
                     } catch (SQLException e) {
                         throw new RuntimeException(e);

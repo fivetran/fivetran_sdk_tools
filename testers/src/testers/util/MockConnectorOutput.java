@@ -13,12 +13,8 @@ import fivetran_sdk.Schema;
 import fivetran_sdk.SchemaChange;
 import fivetran_sdk.Table;
 import fivetran_sdk.ValueType;
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -169,8 +165,14 @@ public final class MockConnectorOutput implements AutoCloseable {
 
     private void handleColumnChanges(SchemaTable schemaTable, Map<String, ValueType> dataMap) {
         boolean createTable = false;
-        Map<String, Column> existingColumns =
-                tables.get(schemaTable).stream().collect(Collectors.toMap(Column::getName, Function.identity()));
+        boolean tableExists = destination.exists(schemaTable);
+        Map<String, Column> existingColumns = (tables.containsKey(schemaTable)) ?
+                tables.get(schemaTable).stream().collect(Collectors.toMap(Column::getName, Function.identity())) :
+                new HashMap<>();
+
+        if (existingColumns.isEmpty()) {
+            createTable = true;
+        }
 
         for (String incomingColumnName : dataMap.keySet()) {
             DataType incomingType = valueTypeToDataType(dataMap.get(incomingColumnName));
@@ -197,7 +199,9 @@ public final class MockConnectorOutput implements AutoCloseable {
                     updateExistingColumnType(schemaTable, existingColumns, incomingColumnName, mergedType);
                 }
             } else {
-                destination.addColumn(schemaTable, incomingColumnName, incomingType);
+                if (tableExists) {
+                    destination.addColumn(schemaTable, incomingColumnName, incomingType);
+                }
 
                 addNewColumnToTablesMap(schemaTable, incomingColumnName, incomingType);
             }
@@ -210,6 +214,10 @@ public final class MockConnectorOutput implements AutoCloseable {
 
     private void addNewColumnToTablesMap(SchemaTable schemaTable, String columnName, DataType newDataType) {
         Column newColumn = Column.newBuilder().setName(columnName).setPrimaryKey(false).setType(newDataType).build();
+        if (!tables.containsKey(schemaTable)) {
+            tables.put(schemaTable, new ArrayList<>());
+        }
+
         tables.get(schemaTable).add(newColumn);
     }
 

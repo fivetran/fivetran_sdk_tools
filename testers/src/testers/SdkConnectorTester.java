@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "024.0113.001";
+    private static final String VERSION = "024.0118.003";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
@@ -69,10 +69,10 @@ public final class SdkConnectorTester {
         String port;
 
         @CommandLine.Option(
-                names = {"--interactive"},
+                names = {"--custom-sdk"},
                 description = "",
                 arity="1")
-        Boolean interactive = true;
+        Boolean customSdk = false;
     }
 
     public static void main(String[] args) throws IOException {
@@ -87,7 +87,7 @@ public final class SdkConnectorTester {
         new SdkConnectorTester().run(
                 cliargs.workingDir,
                 cliargs.destinationSchema,
-                cliargs.interactive,
+                cliargs.customSdk,
                 grpcHost,
                 Integer.parseInt(cliargs.port));
     }
@@ -148,14 +148,18 @@ public final class SdkConnectorTester {
         }
     }
 
-    public void run(String workingDir, String destinationSchema, boolean interactive,
+    public void run(String workingDir, String destinationSchema, boolean customSdk,
                     String grpcHost, int grpcPort) {
         LOG.info("Version: " + VERSION);
         LOG.info("Directory: " + workingDir);
         LOG.info("Destination schema: " + destinationSchema);
-        LOG.info("Interactive: " + interactive);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
+        if (customSdk) {
+            LOG.info("Custom SDK mode enabled");
+        }
+
+        Path schemaSelectionsFilePath = Paths.get(workingDir, SCHEMA_SELECTION_FILE);
 
         ManagedChannel channel = SdkConnectorClient.createChannel(grpcHost, grpcPort);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> SdkConnectorClient.closeChannel(channel)));
@@ -193,22 +197,15 @@ public final class SdkConnectorTester {
             LOG.info("Previous state:\n" + stateJson);
 
             SchemaResponse schemaResponse = client.schema(creds, stateJson);
-            Path schemaSelectionsFilePath = Paths.get(workingDir, SCHEMA_SELECTION_FILE);
             if (Files.exists(schemaSelectionsFilePath)) {
                 // TODO: Handle changes in SchemaResponse
             } else {
                 createSchemaFileForSelections(schemaResponse, destinationSchema, schemaSelectionsFilePath);
                 LOG.info("Schema selection file is generated");
 
-                if (interactive) {
+                if (!customSdk) {
                     LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
                     System.in.read();
-                } else {
-                    try {
-                        Files.deleteIfExists(schemaSelectionsFilePath);
-                    } catch (IOException e) {
-                        LOG.warning("Unable to delete file: " + schemaSelectionsFilePath);
-                    }
                 }
             }
 
@@ -236,6 +233,18 @@ public final class SdkConnectorTester {
 
         } catch (Throwable e) {
             LOG.log(Level.SEVERE, "Sync FAILED", e);
+        } finally {
+            if (customSdk) {
+                try {
+                    Files.deleteIfExists(configFilePath);
+                } catch (IOException e) {
+                }
+
+                try {
+                    Files.deleteIfExists(schemaSelectionsFilePath);
+                } catch (IOException e) {
+                }
+            }
         }
 
         System.exit(0);
