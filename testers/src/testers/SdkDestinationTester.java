@@ -44,7 +44,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0116.001";
+    private static final String VERSION = "024.0125.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -278,7 +278,7 @@ public final class SdkDestinationTester {
                     List<Object> rows = entry2.getValue();
 
                     SecretKey key = SdkCrypto.newEphemeralKey();
-                    String extension = (plainText) ? "csv" : "csv.zst.aes";
+                    String extension = (plainText) ? "csv" : "csv.zstd.aes";
                     String filename = String.format("%s_%s_%s.%s", table, batchName, opName, extension);
                     Path path = Paths.get(workingDir, filename);
                     writeFile(path, key, csvSchema, opName, columns, rows, table, plainText);
