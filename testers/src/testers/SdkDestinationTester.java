@@ -44,7 +44,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0125.001";
+    private static final String VERSION = "024.0131.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -254,6 +254,7 @@ public final class SdkDestinationTester {
 
         // Upsert, Update, Delete, Truncate (with timestamp)
         if (batch.containsKey("ops")) {
+            Instant syncStart = Instant.now();
             separateOpsToTables((List<Map<String, Object>>) batch.get("ops"), tableDMLs, tableTruncates);
 
             // Create batch files per table
@@ -281,7 +282,7 @@ public final class SdkDestinationTester {
                     String extension = (plainText) ? "csv" : "csv.zstd.aes";
                     String filename = String.format("%s_%s_%s.%s", table, batchName, opName, extension);
                     Path path = Paths.get(workingDir, filename);
-                    writeFile(path, key, csvSchema, opName, columns, rows, table, plainText);
+                    writeFile(path, key, csvSchema, syncStart, opName, columns, rows, table, plainText);
 
                     Path grpcPath = Paths.get(grpcWorkingDir, filename);
                     keys.put(grpcPath.toString(), ByteString.copyFrom(key.getEncoded()));
@@ -327,6 +328,7 @@ public final class SdkDestinationTester {
             Path path,
             SecretKey key,
             CsvSchema csvSchema,
+            Instant ts,
             String opName,
             List<Column> columns,
             List<Object> rows,
@@ -338,7 +340,6 @@ public final class SdkDestinationTester {
                         CSV.writer(csvSchema).writeValues(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
 
             Set<String> columnNames = columns.stream().map(Column::getName).collect(Collectors.toSet());
-            Instant now = Instant.now();
             for (var row : rows) {
                 Map<String, Object> data = (Map<String, Object>) row;
 
@@ -371,7 +372,7 @@ public final class SdkDestinationTester {
                                     opName, table));
                 }
 
-                data.put(SYNCED_SYS_COLUMN, now);
+                data.put(SYNCED_SYS_COLUMN, ts);
 
                 if (opName.equals("upsert")) {
                     data.put(DELETED_SYS_COLUMN, false);
@@ -557,7 +558,6 @@ public final class SdkDestinationTester {
                 }
 
             } else if (opName.startsWith("tru")) {
-                Instant now = Instant.now();
                 if (!(op instanceof Collection<?>)) {
                     throw new RuntimeException("Truncate should have a list of table name(s)");
                 }
@@ -567,7 +567,7 @@ public final class SdkDestinationTester {
                         LOG.fine("Another truncate for table: " + table);
                     }
 
-                    tableTruncates.put(table, now);
+                    tableTruncates.put(table, Instant.now());
                 }
 
             } else {
