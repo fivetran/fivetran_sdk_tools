@@ -44,7 +44,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0202.001";
+    private static final String VERSION = "024.0207.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -200,6 +200,10 @@ public final class SdkDestinationTester {
                 } else if (response.getNotFound()) {
                     LOG.info(String.format("Table does not exist at the destination: %s", tableName));
                 } else {
+                    if (!tableDMLs.containsKey(tableName)) {
+                        tableDMLs.put(tableName, new LinkedHashMap<>());
+                    }
+
                     Table table = response.getTable();
                     tables.put(tableName, table);
                     LOG.info(String.format("Describe Table: %s\n%s", tableName, table));
@@ -215,9 +219,10 @@ public final class SdkDestinationTester {
                     LOG.fine("Table already exists: " + tableName);
                 }
 
-                if (!tableDMLs.containsKey(tableName)) {
-                    tableDMLs.put(tableName, new LinkedHashMap<>());
+                if (tableDMLs.containsKey(tableName)) {
+                    LOG.warning("Replacing definition for table: " + tableName);
                 }
+                tableDMLs.put(tableName, new LinkedHashMap<>());
 
                 Table table = buildTable(tableName, (Map<String, Object>) tableEntry.getValue());
 
@@ -236,9 +241,10 @@ public final class SdkDestinationTester {
             for (var tableEntry : ((Map<String, Object>) batch.get("alter_table")).entrySet()) {
                 String tableName = tableEntry.getKey();
 
-                if (!tableDMLs.containsKey(tableName)) {
-                    tableDMLs.put(tableName, new LinkedHashMap<>());
+                if (tableDMLs.containsKey(tableName)) {
+                    LOG.info("Updating definition for table: " + tableName);
                 }
+                tableDMLs.put(tableName, new LinkedHashMap<>());
 
                 Table table = buildTable(tableName, (Map<String, Object>) tableEntry.getValue());
 
