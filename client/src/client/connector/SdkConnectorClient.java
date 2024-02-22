@@ -112,7 +112,7 @@ public class SdkConnectorClient {
     private ConnectorGrpc.ConnectorBlockingStub getBlockingStub() {
         if (blockingStub == null) {
             waitForServer(channel);
-            blockingStub = ConnectorGrpc.newBlockingStub(channel);
+            blockingStub = ConnectorGrpc.newBlockingStub(channel).withCompression("gzip");
         }
         return blockingStub;
     }
