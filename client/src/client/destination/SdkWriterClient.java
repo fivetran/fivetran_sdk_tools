@@ -185,7 +185,7 @@ public class SdkWriterClient {
     private DestinationGrpc.DestinationBlockingStub getBlockingStub() {
         if (blockingStub == null) {
             waitForServer(channel);
-            blockingStub = DestinationGrpc.newBlockingStub(channel);
+            blockingStub = DestinationGrpc.newBlockingStub(channel).withCompression("gzip");
         }
         return blockingStub;
     }
