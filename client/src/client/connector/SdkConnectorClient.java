@@ -15,6 +15,7 @@ public class SdkConnectorClient {
     public static final int DEFAULT_GRPC_PORT = 50051;
     private static final int MAX_RETRY = 30;
     private static final int INITIAL_WAIT_TIME = 500; // msec
+    public static final int MAX_MESSAGE_SIZE = 32 * 1024 * 1024;
 
     private final ManagedChannel channel;
     private ConnectorGrpc.ConnectorBlockingStub blockingStub = null;
@@ -137,7 +138,11 @@ public class SdkConnectorClient {
     }
 
     public static ManagedChannel createChannel(String host, int port) {
-        return ManagedChannelBuilder.forAddress(host, port).usePlaintext().idleTimeout(5, TimeUnit.SECONDS).build();
+        return ManagedChannelBuilder.forAddress(host, port)
+                .usePlaintext()
+                .maxInboundMessageSize(MAX_MESSAGE_SIZE)
+                .idleTimeout(30, TimeUnit.SECONDS)
+                .build();
     }
 
     public static void closeChannel(ManagedChannel channel) {
