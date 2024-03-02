@@ -1,9 +1,11 @@
 package client.destination;
 
+import static client.connector.SdkConnectorClient.MAX_MESSAGE_SIZE;
 import static client.connector.SdkConnectorClient.waitForServer;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
+
 import fivetran_sdk.AlterTableRequest;
 import fivetran_sdk.AlterTableResponse;
 import fivetran_sdk.Column;
@@ -25,8 +27,10 @@ import fivetran_sdk.TruncateRequest;
 import fivetran_sdk.TruncateResponse;
 import fivetran_sdk.WriteBatchRequest;
 import fivetran_sdk.WriteBatchResponse;
+
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -191,7 +195,10 @@ public class SdkWriterClient {
     }
 
     public static ManagedChannel createChannel(String host, int port) {
-        return ManagedChannelBuilder.forAddress(host, port).usePlaintext().idleTimeout(5, TimeUnit.SECONDS).build();
+        return ManagedChannelBuilder.forAddress(host, port)
+                .usePlaintext()
+                .maxInboundMessageSize(MAX_MESSAGE_SIZE)
+                .build();
     }
 
     public static void closeChannel(ManagedChannel channel) {
