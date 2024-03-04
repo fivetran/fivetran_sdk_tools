@@ -2,6 +2,12 @@
 
 set -e
 
+VERSION="024.0304.001"
+
+# -- Don't forget the following --
+# gcloud auth login
+# docker login
+
 cd "$(git rev-parse --show-toplevel)"
 
 # Copy the latest proto files
@@ -14,9 +20,9 @@ bazel build //testers:run_sdk_connector_tester_deploy.jar
 
 cp -f "$(git rev-parse --show-toplevel)/bazel-bin/testers/run_sdk_connector_tester_deploy.jar" .
 
-docker buildx build --push -f Dockerfile.connector_tester --platform=linux/amd64,linux/arm64 --tag fivetrandocker/sdk-connector-tester:<version>  .
+docker buildx build --push -f Dockerfile.connector_tester --platform=linux/amd64,linux/arm64 --tag fivetrandocker/sdk-connector-tester:$VERSION  .
 
-docker pull fivetrandocker/sdk-connector-tester:<version>
+docker pull fivetrandocker/sdk-connector-tester:$VERSION
 
 # clean up
 rm run_sdk_connector_tester_deploy.jar
