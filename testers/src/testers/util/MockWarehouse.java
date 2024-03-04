@@ -7,6 +7,7 @@ import static java.util.stream.Collectors.joining;
 import fivetran_sdk.Column;
 import fivetran_sdk.DataType;
 import fivetran_sdk.ValueType;
+
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -19,7 +20,6 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 public final class MockWarehouse implements AutoCloseable {
     private static final Logger LOG = Logger.getLogger(MockWarehouse.class.getName());
@@ -101,17 +101,29 @@ public final class MockWarehouse implements AutoCloseable {
                 });
     }
 
-    public void upsert(SchemaTable schemaTable, List<Column> columns, Map<String, ValueType> dataMap) {
+    public void upsert(SchemaTable schemaTable, List<String> pkeys, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Upsert]: %s  Data: %s", schemaTable, dataMap));
 
         String columnNames = dataMap.keySet().stream().map(MockWarehouse::renamer).collect(joining(","));
         String values = String.join(",", valueTypeToString(dataMap).values());
-        List<String> pkeys = getPrimaryKeys(columns);
-        String sqlUpsert = String.format("INSERT %s INTO %s (%s) VALUES (%s)",
-                pkeys.isEmpty() ? "" : "OR REPLACE",
-                schemaTable.toString(MockWarehouse::renamer),
-                columnNames,
-                values);
+        String updateOnConflict =
+                dataMap.keySet()
+                        .stream()
+                        .filter(col -> !pkeys.contains(col))
+                        .map(col -> String.format("%s = excluded.%s", renamer(col), renamer(col)))
+                        .collect(joining(","));
+
+        String sqlUpsert =
+                "INSERT INTO "
+                        + schemaTable.toString(MockWarehouse::renamer)
+                        + "("
+                        + columnNames
+                        + ") VALUES ("
+                        + values
+                        + ") ON CONFLICT ("
+                        + String.join(",", pkeys)
+                        + ") DO UPDATE SET "
+                        + updateOnConflict;
 
         try (Connection c = getConnection();
                 Statement s = c.createStatement()) {
@@ -121,16 +133,15 @@ public final class MockWarehouse implements AutoCloseable {
         }
     }
 
-    public void update(SchemaTable schemaTable, List<Column> columns, Map<String, ValueType> dataMap) {
+    public void update(SchemaTable schemaTable, List<String> pkeys, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Update]: %s  Data: %s", schemaTable, dataMap));
 
-        List<String> pkeys = getPrimaryKeys(columns);
         String values =
                 valueTypeToString(dataMap)
                         .entrySet()
                         .stream()
                         .filter(e -> !pkeys.contains(e.getKey()))
-                        .map(e -> String.format("%s=%s", e.getKey(), e.getValue()))
+                        .map(e -> String.format("%s=%s", renamer(e.getKey()), e.getValue()))
                         .collect(joining(","));
 
         String where =
@@ -138,7 +149,7 @@ public final class MockWarehouse implements AutoCloseable {
                         .entrySet()
                         .stream()
                         .filter(e -> pkeys.contains(e.getKey()))
-                        .map(e -> String.format("%s=%s", e.getKey(), e.getValue()))
+                        .map(e -> String.format("%s=%s", renamer(e.getKey()), e.getValue()))
                         .collect(joining(" AND "));
 
         String sqlUpdate =
@@ -152,19 +163,21 @@ public final class MockWarehouse implements AutoCloseable {
         }
     }
 
-    public void delete(SchemaTable schemaTable, List<Column> columns, Map<String, ValueType> dataMap) {
+    public void delete(SchemaTable schemaTable, List<String> pkeys, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Delete]: %s  Data: %s", schemaTable, dataMap));
 
-        List<String> pkeys = getPrimaryKeys(columns);
         String where =
                 valueTypeToString(dataMap)
                         .entrySet()
                         .stream()
                         .filter(e -> pkeys.contains(e.getKey()))
-                        .map(e -> String.format("%s=%s", e.getKey(), e.getValue()))
+                        .map(e -> String.format("%s=%s",
+                                renamer(e.getKey()), e.getValue()))
                         .collect(joining(" AND "));
 
-        String sqlDelete = "DELETE FROM " + schemaTable.toString(MockWarehouse::renamer) + " WHERE " + where;
+        String sqlDelete = "DELETE FROM " +
+                schemaTable.toString(MockWarehouse::renamer)
+                + " WHERE " + where;
 
         try (Connection c = getConnection();
                 Statement s = c.createStatement()) {
@@ -259,7 +272,7 @@ public final class MockWarehouse implements AutoCloseable {
                 });
     }
 
-    public void createTable(SchemaTable schemaTable, List<Column> columns) {
+    public void createTable(SchemaTable schemaTable, Collection<Column> columns) {
         LOG.info("[CreateTable]: " + schemaTable);
 
         runOnConnection(
@@ -299,8 +312,8 @@ public final class MockWarehouse implements AutoCloseable {
         return name;
     }
 
-    private static List<String> getPrimaryKeys(Collection<Column> columns) {
-        return columns.stream().filter(Column::getPrimaryKey).map(Column::getName).collect(Collectors.toList());
+    static List<String> getPrimaryKeys(Collection<Column> columns) {
+        return columns.stream().filter(Column::getPrimaryKey).map(Column::getName).toList();
     }
 
     private static String sqlType(Column c) {

@@ -1,11 +1,10 @@
 package testers.util;
 
+import static org.mockito.Mockito.*;
 import static testers.util.SdkConverters.SYS_CLOCK;
 import static testers.util.SdkConverters.objectToValueType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 
 import fivetran_sdk.Column;
 import fivetran_sdk.DataType;
@@ -14,10 +13,9 @@ import fivetran_sdk.Operation;
 import fivetran_sdk.Record;
 import fivetran_sdk.Table;
 import fivetran_sdk.ValueType;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+
+import java.util.*;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -163,7 +161,7 @@ public class MockConnectorOutputSpec {
                         Column.newBuilder().setName("id1").setType(DataType.INT).setPrimaryKey(true).build(),
                         Column.newBuilder().setName("dbl").setType(DataType.DOUBLE).setPrimaryKey(false).build());
         verify(destination).createTable(schemaTable, expectedColumns);
-        verify(destination).upsert(schemaTable, expectedColumns, row);
+        verify(destination).upsert(schemaTable, Collections.singletonList("id1"), row);
     }
 
     @Test
@@ -182,6 +180,9 @@ public class MockConnectorOutputSpec {
         SchemaTable schemaTable = new SchemaTable(SCHEMA_NAME, table.getName());
         verify(destination).createTable(schemaTable, columns);
 
+        // We just created the table, so it would return "exists"
+        when(destination.exists(eq(schemaTable))).thenReturn(true);
+
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", objectToValueType(100));
         row.put("dbl", objectToValueType(SYS_CLOCK.instant()));
@@ -191,12 +192,8 @@ public class MockConnectorOutputSpec {
                         .build();
         connectorOutput.enqueueOperation(upsert);
 
-        List<Column> expectedColumns =
-                Arrays.asList(
-                        Column.newBuilder().setName("id1").setType(DataType.INT).setPrimaryKey(true).build(),
-                        Column.newBuilder().setName("dbl").setType(DataType.STRING).setPrimaryKey(false).build());
         verify(destination).changeColumnType(schemaTable, "dbl", DataType.STRING);
-        verify(destination).upsert(schemaTable, expectedColumns, row);
+        verify(destination).upsert(schemaTable, Collections.singletonList("id1"), row);
     }
 
     @Test
@@ -215,6 +212,9 @@ public class MockConnectorOutputSpec {
         SchemaTable schemaTable = new SchemaTable(SCHEMA_NAME, table.getName());
         verify(destination).createTable(schemaTable, columns);
 
+        // We just created the table, so it would return "exists"
+        when(destination.exists(eq(schemaTable))).thenReturn(true);
+
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", objectToValueType(100));
         row.put("dbl", objectToValueType(123.46d));
@@ -225,12 +225,7 @@ public class MockConnectorOutputSpec {
                         .build();
         connectorOutput.enqueueOperation(upsert);
 
-        List<Column> expectedColumns =
-                Arrays.asList(
-                        Column.newBuilder().setName("id1").setType(DataType.INT).setPrimaryKey(true).build(),
-                        Column.newBuilder().setName("dbl").setType(DataType.DOUBLE).setPrimaryKey(false).build(),
-                        Column.newBuilder().setName("new_col").setType(DataType.BOOLEAN).setPrimaryKey(false).build());
         verify(destination).addColumn(schemaTable, "new_col", DataType.BOOLEAN);
-        verify(destination).upsert(schemaTable, expectedColumns, row);
+        verify(destination).upsert(schemaTable, Collections.singletonList("id1"), row);
     }
 }

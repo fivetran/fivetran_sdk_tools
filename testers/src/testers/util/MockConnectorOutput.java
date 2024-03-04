@@ -14,11 +14,17 @@ import fivetran_sdk.SchemaChange;
 import fivetran_sdk.Table;
 import fivetran_sdk.ValueType;
 
+import javax.annotation.Nonnull;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public final class MockConnectorOutput implements AutoCloseable {
@@ -32,6 +38,10 @@ public final class MockConnectorOutput implements AutoCloseable {
     private final Supplier<String> stateLoader;
 
     private final Map<SchemaTable, List<Column>> tables = new HashMap<>();
+
+    private static final Pattern LONG_MATCHER = Pattern.compile("[+-]?\\d+");
+    private static final Pattern DOUBLE_MATCHER =
+            Pattern.compile("[+-]?(?:(?:\\d*\\.\\d+(?:[eE][+-]?\\d+)?)|(?:\\d+\\.\\d*))");
 
     private long upsertCount = 0;
     private long updateCount = 0;
@@ -90,6 +100,19 @@ public final class MockConnectorOutput implements AutoCloseable {
         }
     }
 
+    private List<String> getPrimaryKeys(SchemaTable schemaTable) {
+        return tables.get(schemaTable).stream()
+                .filter(Column::getPrimaryKey)
+                .map(c -> {
+                    if (c.getType() == DataType.UNSPECIFIED) {
+                        throw new IllegalStateException("Primary key with unknown data type: " + c.getName());
+                    } else {
+                        return c.getName();
+                    }
+                })
+                .collect(Collectors.toList());
+    }
+
     private void handleUpsert(Record record) {
         upsertCount++;
         SchemaTable schemaTable =
@@ -98,8 +121,15 @@ public final class MockConnectorOutput implements AutoCloseable {
 
         handleColumnChanges(schemaTable, dataMap);
 
-        destination.upsert(schemaTable, tables.get(schemaTable), dataMap);
-        LOG.info(String.format("[Upsert]: %s  Data: %s", schemaTable, dataMap));
+        // Eliminate missing columns and columns with unknown data type
+        Set<String> knownColumns = tables.get(schemaTable).stream()
+                .filter(c -> c.getType() != DataType.UNSPECIFIED).map(Column::getName).collect(Collectors.toSet());
+        Map<String, ValueType> knownDataMap = dataMap.entrySet()
+                .stream().filter(e -> knownColumns.contains(e.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        destination.upsert(schemaTable, getPrimaryKeys(schemaTable), knownDataMap);
+        LOG.info(String.format("[Upsert]: %s  Data: %s", schemaTable, knownDataMap));
     }
 
     private void handleUpdate(Record record) {
@@ -110,8 +140,15 @@ public final class MockConnectorOutput implements AutoCloseable {
 
         handleColumnChanges(schemaTable, dataMap);
 
-        destination.update(schemaTable, tables.get(schemaTable), dataMap);
-        LOG.info(String.format("[Update]: %s  Data: %s", schemaTable, dataMap));
+        // Eliminate missing columns and columns with unknown data type
+        Set<String> knownColumns = tables.get(schemaTable).stream()
+                .filter(c -> c.getType() != DataType.UNSPECIFIED).map(Column::getName).collect(Collectors.toSet());
+        Map<String, ValueType> knownDataMap = dataMap.entrySet()
+                .stream().filter(e -> knownColumns.contains(e.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        destination.update(schemaTable, getPrimaryKeys(schemaTable), knownDataMap);
+        LOG.info(String.format("[Update]: %s  Data: %s", schemaTable, knownDataMap));
     }
 
     private void handleDelete(Record record) {
@@ -119,7 +156,7 @@ public final class MockConnectorOutput implements AutoCloseable {
         SchemaTable schemaTable =
                 new SchemaTable(record.hasSchemaName() ? record.getSchemaName() : defaultSchema, record.getTableName());
         Map<String, ValueType> dataMap = record.getDataMap();
-        destination.delete(schemaTable, tables.get(schemaTable), dataMap);
+        destination.delete(schemaTable, getPrimaryKeys(schemaTable), dataMap);
         LOG.info(String.format("[Delete]: %s  Data: %s", schemaTable, dataMap));
     }
 
@@ -132,7 +169,11 @@ public final class MockConnectorOutput implements AutoCloseable {
     }
 
     @VisibleForTesting
-    public static DataType mergeTypes(DataType existing, DataType incoming) {
+    public static DataType mergeTypes(DataType incoming, DataType existing) {
+        if (existing == DataType.UNSPECIFIED) {
+            return incoming;
+        }
+
         if (incoming.getNumber() > existing.getNumber()) {
             if (incoming.getNumber() <= DataType.DOUBLE.getNumber()) {
                 return incoming;
@@ -163,56 +204,123 @@ public final class MockConnectorOutput implements AutoCloseable {
         return existing;
     }
 
+    private DataType inferType(ValueType valueType) {
+        if (valueType.hasString()) {
+            String value = valueType.getString();
+            if (isInstant(value)) return DataType.UTC_DATETIME;
+            if (isLocalDateTime(value)) return DataType.NAIVE_DATETIME;
+            if (isLocalDate(value)) return DataType.NAIVE_DATE;
+            if (isBoolean(value)) return DataType.BOOLEAN;
+            if (isLong(value)) return DataType.LONG;
+            if (isDouble(value)) return DataType.DOUBLE;
+            return DataType.STRING;
+        } else {
+            return valueTypeToDataType(valueType);
+        }
+    }
+
+    private boolean isBoolean(@Nonnull String value) {
+        String lower = value.toLowerCase();
+        return lower.equals("true") || lower.equals("false") || lower.equals("t") || lower.equals("f");
+    }
+
+    private boolean isDouble(@Nonnull String value) {
+        return value.equals("NaN") || value.equals("Infinity") || DOUBLE_MATCHER.matcher(value).matches();
+    }
+
+    private boolean isLong(@Nonnull String value) {
+        try {
+            if (!LONG_MATCHER.matcher(value).matches()) return false;
+            if ((value.startsWith("0") && !value.equals("0")) || value.startsWith("+")) return false;
+            Long.parseLong(value);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private boolean isLocalDate(@Nonnull String value) {
+        try {
+            LocalDate.parse(value);
+            return true;
+        } catch (DateTimeParseException e) {
+            return  false;
+        }
+    }
+
+    private boolean isInstant(@Nonnull String value) {
+        try {
+            Instant.parse(value);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    private boolean isLocalDateTime(@Nonnull String value) {
+        try {
+            LocalDateTime.parse(value);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
     private void handleColumnChanges(SchemaTable schemaTable, Map<String, ValueType> dataMap) {
         boolean createTable = false;
         boolean tableExists = destination.exists(schemaTable);
-        Map<String, Column> existingColumns = (tables.containsKey(schemaTable)) ?
-                tables.get(schemaTable).stream().collect(Collectors.toMap(Column::getName, Function.identity())) :
-                new HashMap<>();
-
-        if (!tableExists) {
-            createTable = true;
-        }
+        Map<String, Column> knownColumns =
+                tables.getOrDefault(schemaTable, new ArrayList<>())
+                        .stream()
+                        .collect(Collectors.toMap(Column::getName, Function.identity()));
 
         for (String incomingColumnName : dataMap.keySet()) {
-            DataType incomingType = valueTypeToDataType(dataMap.get(incomingColumnName));
+            DataType knownType = knownColumns
+                    .getOrDefault(incomingColumnName, Column.newBuilder().build()).getType();
+            // Assume incoming type is the known type (declared or previously observed)
+            DataType incomingType = (knownType != DataType.UNSPECIFIED) ?
+                    knownType : inferType(dataMap.get(incomingColumnName));
+            // Merge assumed incoming type and current observed type
+            DataType observedType = valueTypeToDataType(dataMap.get(incomingColumnName));
+            incomingType = mergeTypes(incomingType, observedType);
+            // Merge incoming type with destination type
+            DataType destinationType = destination.getColumnType(schemaTable, incomingColumnName).orElse(DataType.UNSPECIFIED);
+            DataType mergedType = mergeTypes(incomingType, destinationType);
 
-            if (existingColumns.containsKey(incomingColumnName)) {
-                Column existingColumn = existingColumns.get(incomingColumnName);
-                Optional<DataType> maybeColumnType = destination.getColumnType(schemaTable, incomingColumnName);
-                DataType existingType = maybeColumnType.orElse(existingColumn.getType());
-                DataType mergedType = mergeTypes(existingType, incomingType);
-
-                if (mergedType.getNumber() != existingType.getNumber()) {
-                    if (existingColumn.getPrimaryKey()) {
-                        createTable = true;
-                    } else {
-                        if (existingType == DataType.UNSPECIFIED) {
-                            if (!createTable) {
-                                destination.addColumn(schemaTable, incomingColumnName, incomingType);
-                            }
+            if (mergedType.getNumber() != knownType.getNumber()) {
+                if (knownColumns.containsKey(incomingColumnName)) {
+                    if (tableExists) {
+                        if (knownType == DataType.UNSPECIFIED) {
+                            destination.addColumn(schemaTable, incomingColumnName, mergedType);
                         } else {
                             destination.changeColumnType(schemaTable, incomingColumnName, mergedType);
                         }
+                    } else {
+                        createTable = true;
                     }
 
-                    updateExistingColumnType(schemaTable, existingColumns, incomingColumnName, mergedType);
-                }
-            } else {
-                if (tableExists) {
-                    destination.addColumn(schemaTable, incomingColumnName, incomingType);
-                }
+                    updateKnownColumn(schemaTable, knownColumns, incomingColumnName, mergedType);
+                } else {
+                    if (tableExists) {
+                        destination.addColumn(schemaTable, incomingColumnName, mergedType);
+                    } else {
+                        createTable = true;
+                    }
 
-                addNewColumnToTablesMap(schemaTable, incomingColumnName, incomingType);
+                    addKnownColumn(schemaTable, incomingColumnName, incomingType);
+                }
             }
         }
 
         if (createTable) {
-            destination.createTable(schemaTable, tables.get(schemaTable));
+            List<Column> columns = tables.get(schemaTable);
+            if (columns.stream().noneMatch(c -> c.getPrimaryKey() && c.getType() == DataType.UNSPECIFIED)) {
+                destination.createTable(schemaTable, columns);
+            }
         }
     }
 
-    private void addNewColumnToTablesMap(SchemaTable schemaTable, String columnName, DataType newDataType) {
+    private void addKnownColumn(SchemaTable schemaTable, String columnName, DataType newDataType) {
         Column newColumn = Column.newBuilder().setName(columnName).setPrimaryKey(false).setType(newDataType).build();
         if (!tables.containsKey(schemaTable)) {
             tables.put(schemaTable, new ArrayList<>());
@@ -221,16 +329,26 @@ public final class MockConnectorOutput implements AutoCloseable {
         tables.get(schemaTable).add(newColumn);
     }
 
-    private void updateExistingColumnType(
-            SchemaTable schemaTable, Map<String, Column> existing, String columnName, DataType newDataType) {
+    private void updateKnownColumn(
+            SchemaTable schemaTable, Map<String, Column> knownColumns, String columnName, DataType newDataType) {
         Column newColumn =
                 Column.newBuilder()
                         .setName(columnName)
-                        .setPrimaryKey(existing.get(columnName).getPrimaryKey())
                         .setType(newDataType)
+                        .setPrimaryKey(knownColumns.get(columnName).getPrimaryKey())
+                        //.setDecimal()  // TODO
                         .build();
-        existing.put(columnName, newColumn);
-        tables.put(schemaTable, new ArrayList<>(existing.values()));
+        knownColumns.put(columnName, newColumn);
+
+        List<Column> newColumns = new ArrayList<>();
+        tables.get(schemaTable).forEach(c -> {
+            if (c.getName().equals(columnName)) {
+                newColumns.add(newColumn);
+            } else {
+                newColumns.add(c);
+            }
+        });
+        tables.put(schemaTable, newColumns);
     }
 
     public void handleSchemaChange(String schema, Table table) {
@@ -248,18 +366,17 @@ public final class MockConnectorOutput implements AutoCloseable {
             // TODO: Possibilities: 1. add column, 2. change type (compare against existing Table)
 
         } else {
-            List<Column> columns = new ArrayList<>(table.getColumnsList());
-            if (columns.stream().noneMatch(c -> c.getPrimaryKey() && c.getType() == DataType.UNSPECIFIED)) {
+            if (table.getColumnsList().stream().noneMatch(c -> c.getPrimaryKey() && c.getType() == DataType.UNSPECIFIED)) {
+                // Create table as long as it does not have any PK columns with UNSPECIFIED data type
                 List<Column> specifiedColumns =
-                        columns.stream().filter(c -> c.getType() != DataType.UNSPECIFIED).collect(Collectors.toList());
+                        table.getColumnsList().stream()
+                                .filter(c -> c.getType() != DataType.UNSPECIFIED).collect(Collectors.toList());
                 if (!specifiedColumns.isEmpty()) {
                     destination.createTable(schemaTable, specifiedColumns);
                 }
-            } else {
-                LOG.fine("Cannot create table with any UNSPECIFIED PK column(s)");
             }
 
-            tables.put(schemaTable, columns);
+            tables.put(schemaTable, new ArrayList<>(table.getColumnsList()));
         }
     }
 

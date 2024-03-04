@@ -1,5 +1,6 @@
 package testers.util;
 
+import static testers.util.MockWarehouse.getPrimaryKeys;
 import static testers.util.SdkConverters.SYS_CLOCK;
 import static testers.util.SdkConverters.objectToValueType;
 import static org.junit.Assert.assertEquals;
@@ -161,7 +162,7 @@ public class MockWarehouseSpec {
         row.put("_udt", objectToValueType(SYS_CLOCK.instant()));
         row.put("_xml", objectToValueType("<xml>123</xml>"));
         row.put("_json", objectToValueType("{\"field\": \"value\"}"));
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         assertEquals(rows.size(), 1);
@@ -180,11 +181,11 @@ public class MockWarehouseSpec {
         row.put("id2", ValueType.newBuilder().setInt(100).build());
         row.put("isL", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         row.put("isL", ValueType.newBuilder().setBool(false).build());
         row.put("dbl", ValueType.newBuilder().setDouble(100.456d).build());
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         assertEquals(rows.size(), 1);
@@ -228,7 +229,7 @@ public class MockWarehouseSpec {
         row.put("manager_staff_id", objectToValueType(1));
         row.put("address_id", objectToValueType(1));
         row.put("last_update", objectToValueType(SYS_CLOCK.instant()));
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         assertEquals(rows.size(), 1);
@@ -250,7 +251,7 @@ public class MockWarehouseSpec {
         row.put("isL", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
         row.put("new_col", objectToValueType(SYS_CLOCK.instant()));
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         assertEquals(rows.size(), 1);
@@ -269,13 +270,13 @@ public class MockWarehouseSpec {
         row.put("id2", ValueType.newBuilder().setInt(100).build());
         row.put("isL", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         row.clear();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
         row.put("dbl", ValueType.newBuilder().setDouble(160.456d).build());
-        warehouse.update(schemaTable, table.getColumnsList(), row);
+        warehouse.update(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         row.put("isL", ValueType.newBuilder().setBool(true).build());
@@ -295,14 +296,14 @@ public class MockWarehouseSpec {
         row.put("id2", ValueType.newBuilder().setInt(100).build());
         row.put("isL", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         row.clear();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
         row.put("isL", ValueType.newBuilder().setBool(false).build());
         row.put("dbl", ValueType.newBuilder().setNull(true).build());
-        warehouse.update(schemaTable, table.getColumnsList(), row);
+        warehouse.update(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         assertEquals(rows.size(), 1);
@@ -321,7 +322,7 @@ public class MockWarehouseSpec {
         row.put("id2", ValueType.newBuilder().setInt(100).build());
         row.put("isL", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         assertEquals(rows.size(), 1);
@@ -329,7 +330,7 @@ public class MockWarehouseSpec {
         row.clear();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        warehouse.delete(schemaTable, table.getColumnsList(), row);
+        warehouse.delete(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows2 = warehouse.read(schemaTable);
         assertEquals(rows2.size(), 0);
@@ -347,12 +348,12 @@ public class MockWarehouseSpec {
         row.put("id2", objectToValueType(100));
         row.put("isL", objectToValueType(true));
         row.put("dbl", objectToValueType(2.1235d));
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         warehouse.changeColumnType(schemaTable, "dbl", DataType.STRING);
 
         row.put("dbl", objectToValueType("testing"));
-        warehouse.update(schemaTable, table.getColumnsList(), row);
+        warehouse.update(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
         assertEquals(rows.size(), 1);
@@ -371,7 +372,7 @@ public class MockWarehouseSpec {
         row.put("id2", ValueType.newBuilder().setInt(100).build());
         row.put("isL", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         warehouse.truncate(schemaTable);
 
@@ -410,7 +411,7 @@ public class MockWarehouseSpec {
         row.put("_udt", objectToValueType(SYS_CLOCK.instant()));
         row.put("_xml", objectToValueType("<xml>123</xml>"));
         row.put("_json", objectToValueType("{\"field\": \"value\"}"));
-        warehouse.upsert(schemaTable, table.getColumnsList(), row);
+        warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         assertEquals(warehouse.getColumnType(schemaTable, "id1").get(), DataType.STRING);
         assertEquals(warehouse.getColumnType(schemaTable, "_bool").get(), DataType.BOOLEAN);
