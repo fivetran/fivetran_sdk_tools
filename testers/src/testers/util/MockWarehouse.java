@@ -305,8 +305,6 @@ public final class MockWarehouse implements AutoCloseable {
         // Convert to lower_case
         name = name.toLowerCase();
 
-        // TODO: Replace non-alphanumeric chars with _
-
         // Require that it start with a word character
         String validLeadingRegex = "[\\w_]";
         if (!name.isEmpty() && !name.substring(0, 1).matches(validLeadingRegex)) name = "_" + name;
