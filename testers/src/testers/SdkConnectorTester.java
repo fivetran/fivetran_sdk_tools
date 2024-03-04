@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "024.0303.001";
+    private static final String VERSION = "024.0304.001";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
