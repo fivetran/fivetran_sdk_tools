@@ -101,8 +101,10 @@ public final class MockWarehouse implements AutoCloseable {
                 });
     }
 
-    public void upsert(SchemaTable schemaTable, List<Column> columns, Map<String, ValueType> dataMap) {
+    public void upsert(SchemaTable schemaTable, Collection<Column> columns, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Upsert]: %s  Data: %s", schemaTable, dataMap));
+
+        // TODO: Drop column with Unspecified type
 
         String columnNames = dataMap.keySet().stream().map(MockWarehouse::renamer).collect(joining(","));
         String values = String.join(",", valueTypeToString(dataMap).values());
@@ -121,7 +123,7 @@ public final class MockWarehouse implements AutoCloseable {
         }
     }
 
-    public void update(SchemaTable schemaTable, List<Column> columns, Map<String, ValueType> dataMap) {
+    public void update(SchemaTable schemaTable, Collection<Column> columns, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Update]: %s  Data: %s", schemaTable, dataMap));
 
         List<String> pkeys = getPrimaryKeys(columns);
@@ -152,7 +154,7 @@ public final class MockWarehouse implements AutoCloseable {
         }
     }
 
-    public void delete(SchemaTable schemaTable, List<Column> columns, Map<String, ValueType> dataMap) {
+    public void delete(SchemaTable schemaTable, Collection<Column> columns, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Delete]: %s  Data: %s", schemaTable, dataMap));
 
         List<String> pkeys = getPrimaryKeys(columns);
@@ -259,7 +261,7 @@ public final class MockWarehouse implements AutoCloseable {
                 });
     }
 
-    public void createTable(SchemaTable schemaTable, List<Column> columns) {
+    public void createTable(SchemaTable schemaTable, Collection<Column> columns) {
         LOG.info("[CreateTable]: " + schemaTable);
 
         runOnConnection(
