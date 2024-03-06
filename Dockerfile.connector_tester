@@ -1,4 +1,4 @@
-FROM us-docker.pkg.dev/build-286712/prod-docker-us/base_images/zulu-openjdk:17.0.9-17.46.19
+FROM azul/zulu-openjdk:17.0.8.1-17.44.53
 
 COPY run_sdk_connector_tester_deploy.jar /app/SdkConnectorTester.jar
 
