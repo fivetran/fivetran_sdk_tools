@@ -44,7 +44,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0222.002";
+    private static final String VERSION = "024.0306.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -260,7 +260,7 @@ public final class SdkDestinationTester {
 
         // Upsert, Update, Delete, Truncate (with timestamp)
         if (batch.containsKey("ops")) {
-            Instant syncStart = Instant.now();
+            Instant syncStart = Instant.ofEpochMilli(System.currentTimeMillis());
             separateOpsToTables((List<Map<String, Object>>) batch.get("ops"), tableDMLs, tableTruncates);
 
             // Create batch files per table
@@ -574,7 +574,7 @@ public final class SdkDestinationTester {
                         LOG.fine("Another truncate for table: " + table);
                     }
 
-                    tableTruncates.put(table, Instant.now());
+                    tableTruncates.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
                 }
 
             } else {
