@@ -182,7 +182,9 @@ public final class SdkDestinationTester {
         // <schema-table, Map<op-type, rows>>
         Map<String, Map<String, List<Object>>> tableDMLs = new HashMap<>();
         // <schema-table, truncateBefore>
-        Map<String, Instant> tableTruncates = new HashMap<>();
+        Map<String, Instant> tableTruncateBefores = new HashMap<>();
+        // <schema-table, truncateBefore>
+        Map<String, Instant> tableHardTruncateBefores = new HashMap<>();
 
         // describeTable
         if (batch.containsKey("describe_table")) {
@@ -261,7 +263,11 @@ public final class SdkDestinationTester {
 
         // Upsert, Update, Delete, Truncate (with timestamp)
         if (batch.containsKey("ops")) {
-            separateOpsToTables((List<Map<String, Object>>) batch.get("ops"), tableDMLs, tableTruncates);
+            separateOpsToTables(
+                    (List<Map<String, Object>>) batch.get("ops"),
+                    tableDMLs,
+                    tableTruncateBefores,
+                    tableHardTruncateBefores);
 
             // Create batch files per table
             for (var entry : tableDMLs.entrySet()) {
@@ -314,18 +320,33 @@ public final class SdkDestinationTester {
                 LOG.info(String.format("WriteBatch succeeded: %s", table));
 
                 // Then truncate if any
-                if (tableTruncates.containsKey(table)) {
-                    Instant truncateTimestamp = tableTruncates.get(table);
-                    LOG.info(String.format("Truncating: %s [%s]", table, truncateTimestamp.toString()));
+                if (tableTruncateBefores.containsKey(table)) {
+                    Instant ts = tableTruncateBefores.get(table);
+                    LOG.info(String.format("Truncating: %s [%s]", table, ts.toString()));
                     client.truncate(
                             DEFAULT_SCHEMA,
                             table,
                             DELETED_SYS_COLUMN,
                             SYNCED_SYS_COLUMN,
-                            truncateTimestamp,
+                            ts,
                             true,
                             config);
                     LOG.info(String.format("Truncate succeeded: %s", table));
+                }
+
+                // Then hard-truncate if any
+                if (tableHardTruncateBefores.containsKey(table)) {
+                    Instant ts = tableHardTruncateBefores.get(table);
+                    LOG.info(String.format("Hard Truncating: %s [%s]", table, ts.toString()));
+                    client.truncate(
+                            DEFAULT_SCHEMA,
+                            table,
+                            DELETED_SYS_COLUMN,
+                            SYNCED_SYS_COLUMN,
+                            ts,
+                            false,
+                            config);
+                    LOG.info(String.format("Hard Truncate succeeded: %s", table));
                 }
             }
         }
@@ -541,7 +562,8 @@ public final class SdkDestinationTester {
     private void separateOpsToTables(
             List<Map<String, Object>> ops,
             Map<String, Map<String, List<Object>>> tableDMLs,
-            Map<String, Instant> tableTruncates) {
+            Map<String, Instant> tableTruncateBefores,
+            Map<String, Instant> tableHardTruncateBefores) {
 
         for (var opEntry : ops) {
             if (opEntry.size() > 1) {
@@ -550,7 +572,9 @@ public final class SdkDestinationTester {
             String opName = opEntry.keySet().toArray()[0].toString();
             Object op = opEntry.values().toArray()[0];
 
-            if (opName.startsWith("ups") | opName.startsWith("upd") | opName.startsWith("del")) {
+            if (opName.equalsIgnoreCase("upsert") ||
+                    opName.equalsIgnoreCase("update") ||
+                    opName.equalsIgnoreCase("delete")) {
                 for (var entry2 : ((Map<String, Object>) op).entrySet()) {
                     String table = entry2.getKey();
                     if (!tableDMLs.containsKey(table)) {
@@ -579,17 +603,30 @@ public final class SdkDestinationTester {
                     }
                 }
 
-            } else if (opName.startsWith("tru")) {
+            } else if (opName.equalsIgnoreCase("truncate_before")) {
                 if (!(op instanceof Collection<?>)) {
-                    throw new RuntimeException("Truncate should have a list of table name(s)");
+                    throw new RuntimeException("TruncateBefore should have a list of table name(s)");
                 }
 
                 for (String table : (Collection<String>) op) {
-                    if (tableTruncates.containsKey(table)) {
-                        LOG.fine("Another truncate for table: " + table);
+                    if (tableTruncateBefores.containsKey(table)) {
+                        LOG.fine("Another truncate_before for table: " + table);
                     }
 
-                    tableTruncates.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
+                    tableTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
+                }
+
+            } else if (opName.equalsIgnoreCase("hard_truncate_before")) {
+                if (!(op instanceof Collection<?>)) {
+                    throw new RuntimeException("HardTruncateBefore should have a list of table name(s)");
+                }
+
+                for (String table : (Collection<String>) op) {
+                    if (tableTruncateBefores.containsKey(table)) {
+                        LOG.fine("Another hard_truncate_before for table: " + table);
+                    }
+
+                    tableHardTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
                 }
 
             } else {
