@@ -273,7 +273,6 @@ public final class SdkDestinationTester {
                 }
                 Map<String, List<Object>> tableDML = entry.getValue();
                 List<Column> columns = tables.get(table).getColumnsList();
-                CsvSchema csvSchema = buildCsvSchema(columns);
 
                 Map<String, ByteString> keys = new HashMap<>();
                 List<String> replaceList = new ArrayList<>();
@@ -284,13 +283,12 @@ public final class SdkDestinationTester {
                 for (var entry2 : tableDML.entrySet()) {
                     String opName = entry2.getKey().toLowerCase();
                     List<Object> rows = entry2.getValue();
-
                     SecretKey key = SdkCrypto.newEphemeralKey();
                     String extension = (plainText) ? "csv" : "csv.zstd.aes";
                     String filename = String.format("%s_%s_%s.%s", table, batchName, opName, extension);
                     Path path = Paths.get(workingDir, filename);
+                    CsvSchema csvSchema = buildCsvSchema(shuffle(columns));
                     writeFile(path, key, csvSchema, opName, columns, rows, table, plainText);
-
                     Path grpcPath = Paths.get(grpcWorkingDir, filename);
                     keys.put(grpcPath.toString(), ByteString.copyFrom(key.getEncoded()));
                     switch (opName) {
@@ -418,6 +416,12 @@ public final class SdkDestinationTester {
         }
         CipherOutputStream cipherStream = SdkCrypto.encryptWrite(outputStream, secretKey);
         return new ZstdOutputStream(cipherStream, -5);
+    }
+
+    private List<Column> shuffle(List<Column> incoming) {
+        List<Column> columns = new ArrayList<>(incoming);
+        Collections.shuffle(columns);
+        return columns;
     }
 
     private CsvSchema buildCsvSchema(List<Column> columns) {
