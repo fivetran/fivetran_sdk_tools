@@ -34,6 +34,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import javax.crypto.CipherOutputStream;
@@ -260,7 +261,6 @@ public final class SdkDestinationTester {
 
         // Upsert, Update, Delete, Truncate (with timestamp)
         if (batch.containsKey("ops")) {
-            Instant syncStart = Instant.ofEpochMilli(System.currentTimeMillis());
             separateOpsToTables((List<Map<String, Object>>) batch.get("ops"), tableDMLs, tableTruncates);
 
             // Create batch files per table
@@ -268,7 +268,8 @@ public final class SdkDestinationTester {
                 String table = entry.getKey();
                 // At this point we should have a Table object for each table in the ops
                 if (!tables.containsKey(table)) {
-                    throw new RuntimeException("Table definition is missing");
+                    throw new RuntimeException(
+                            String.format("Table definition is missing: '%s'", table));
                 }
                 Map<String, List<Object>> tableDML = entry.getValue();
                 List<Column> columns = tables.get(table).getColumnsList();
@@ -288,7 +289,7 @@ public final class SdkDestinationTester {
                     String extension = (plainText) ? "csv" : "csv.zstd.aes";
                     String filename = String.format("%s_%s_%s.%s", table, batchName, opName, extension);
                     Path path = Paths.get(workingDir, filename);
-                    writeFile(path, key, csvSchema, syncStart, opName, columns, rows, table, plainText);
+                    writeFile(path, key, csvSchema, opName, columns, rows, table, plainText);
 
                     Path grpcPath = Paths.get(grpcWorkingDir, filename);
                     keys.put(grpcPath.toString(), ByteString.copyFrom(key.getEncoded()));
@@ -316,12 +317,14 @@ public final class SdkDestinationTester {
 
                 // Then truncate if any
                 if (tableTruncates.containsKey(table)) {
+                    Instant truncateTimestamp = tableTruncates.get(table);
+                    LOG.info(String.format("Truncating: %s [%s]", table, truncateTimestamp.toString()));
                     client.truncate(
                             DEFAULT_SCHEMA,
                             table,
                             DELETED_SYS_COLUMN,
                             SYNCED_SYS_COLUMN,
-                            tableTruncates.get(table),
+                            truncateTimestamp,
                             true,
                             config);
                     LOG.info(String.format("Truncate succeeded: %s", table));
@@ -334,7 +337,6 @@ public final class SdkDestinationTester {
             Path path,
             SecretKey key,
             CsvSchema csvSchema,
-            Instant ts,
             String opName,
             List<Column> columns,
             List<Object> rows,
@@ -349,11 +351,10 @@ public final class SdkDestinationTester {
             for (var row : rows) {
                 Map<String, Object> data = (Map<String, Object>) row;
 
-                if (data.containsKey(SYNCED_SYS_COLUMN)) {
+                if (!data.containsKey(SYNCED_SYS_COLUMN)) {
                     throw new RuntimeException(
                             String.format(
-                                    "System column '%s' is found in op '%s' for table: %s",
-                                    SYNCED_SYS_COLUMN, opName, table));
+                                    "System column '%s' is missing from table: %s", SYNCED_SYS_COLUMN, table));
                 }
 
                 if (data.containsKey(DELETED_SYS_COLUMN)) {
@@ -370,15 +371,12 @@ public final class SdkDestinationTester {
                                     ID_SYS_COLUMN, opName, table));
                 }
 
-
                 if (!data.containsKey(ID_SYS_COLUMN) && columnNames.contains(ID_SYS_COLUMN)) {
                     throw new RuntimeException(
                             String.format(
                                     "Column '_fivetran_id' is missing in op '%s' for pkeyless table: %s",
                                     opName, table));
                 }
-
-                data.put(SYNCED_SYS_COLUMN, ts);
 
                 if (opName.equals("upsert")) {
                     data.put(DELETED_SYS_COLUMN, false);
@@ -556,6 +554,19 @@ public final class SdkDestinationTester {
                     }
 
                     List<Object> rows = (List<Object>) entry2.getValue();
+
+                    // Add fivetran synced column
+                    for (var row : rows) {
+                        Map<String, Object> rowData = (Map<String, Object>) row;
+                        if (((Map<?, ?>) row).containsKey(SYNCED_SYS_COLUMN)) {
+                            throw new RuntimeException(SYNCED_SYS_COLUMN + " is a system column");
+                        }
+
+                        rowData.put(SYNCED_SYS_COLUMN, Instant.ofEpochMilli(System.currentTimeMillis()));
+                        // Add a tiny bit of delay to simulate a real sync
+                        delay();
+                    }
+
                     Map<String, List<Object>> tableDML = tableDMLs.get(table);
                     if (tableDML.containsKey(opName)) {
                         tableDML.get(opName).addAll(rows);
@@ -581,6 +592,17 @@ public final class SdkDestinationTester {
                 throw new RuntimeException(
                         "Unexpected entry: " + opName + " | " + op.toString() + " | " + op.getClass());
             }
+
+            // Add a tiny bit of delay to simulate a real sync
+            delay();
+        }
+    }
+
+    private static void delay() {
+        try {
+            TimeUnit.MILLISECONDS.sleep(50);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
     }
 
