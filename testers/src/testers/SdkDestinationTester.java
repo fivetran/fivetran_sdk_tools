@@ -34,6 +34,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import javax.crypto.CipherOutputStream;
@@ -44,7 +45,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0306.001";
+    private static final String VERSION = "024.0309.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -181,7 +182,9 @@ public final class SdkDestinationTester {
         // <schema-table, Map<op-type, rows>>
         Map<String, Map<String, List<Object>>> tableDMLs = new HashMap<>();
         // <schema-table, truncateBefore>
-        Map<String, Instant> tableTruncates = new HashMap<>();
+        Map<String, Instant> tableTruncateBefores = new HashMap<>();
+        // <schema-table, truncateBefore>
+        Map<String, Instant> tableHardTruncateBefores = new HashMap<>();
 
         // describeTable
         if (batch.containsKey("describe_table")) {
@@ -260,19 +263,22 @@ public final class SdkDestinationTester {
 
         // Upsert, Update, Delete, Truncate (with timestamp)
         if (batch.containsKey("ops")) {
-            Instant syncStart = Instant.ofEpochMilli(System.currentTimeMillis());
-            separateOpsToTables((List<Map<String, Object>>) batch.get("ops"), tableDMLs, tableTruncates);
+            separateOpsToTables(
+                    (List<Map<String, Object>>) batch.get("ops"),
+                    tableDMLs,
+                    tableTruncateBefores,
+                    tableHardTruncateBefores);
 
             // Create batch files per table
             for (var entry : tableDMLs.entrySet()) {
                 String table = entry.getKey();
                 // At this point we should have a Table object for each table in the ops
                 if (!tables.containsKey(table)) {
-                    throw new RuntimeException("Table definition is missing");
+                    throw new RuntimeException(
+                            String.format("Table definition is missing: '%s'", table));
                 }
                 Map<String, List<Object>> tableDML = entry.getValue();
                 List<Column> columns = tables.get(table).getColumnsList();
-                CsvSchema csvSchema = buildCsvSchema(columns);
 
                 Map<String, ByteString> keys = new HashMap<>();
                 List<String> replaceList = new ArrayList<>();
@@ -283,13 +289,12 @@ public final class SdkDestinationTester {
                 for (var entry2 : tableDML.entrySet()) {
                     String opName = entry2.getKey().toLowerCase();
                     List<Object> rows = entry2.getValue();
-
                     SecretKey key = SdkCrypto.newEphemeralKey();
                     String extension = (plainText) ? "csv" : "csv.zstd.aes";
                     String filename = String.format("%s_%s_%s.%s", table, batchName, opName, extension);
                     Path path = Paths.get(workingDir, filename);
-                    writeFile(path, key, csvSchema, syncStart, opName, columns, rows, table, plainText);
-
+                    CsvSchema csvSchema = buildCsvSchema(shuffle(columns));
+                    writeFile(path, key, csvSchema, opName, columns, rows, table, plainText);
                     Path grpcPath = Paths.get(grpcWorkingDir, filename);
                     keys.put(grpcPath.toString(), ByteString.copyFrom(key.getEncoded()));
                     switch (opName) {
@@ -315,16 +320,33 @@ public final class SdkDestinationTester {
                 LOG.info(String.format("WriteBatch succeeded: %s", table));
 
                 // Then truncate if any
-                if (tableTruncates.containsKey(table)) {
+                if (tableTruncateBefores.containsKey(table)) {
+                    Instant ts = tableTruncateBefores.get(table);
+                    LOG.info(String.format("Truncating: %s [%s]", table, ts.toString()));
                     client.truncate(
                             DEFAULT_SCHEMA,
                             table,
                             DELETED_SYS_COLUMN,
                             SYNCED_SYS_COLUMN,
-                            tableTruncates.get(table),
+                            ts,
                             true,
                             config);
                     LOG.info(String.format("Truncate succeeded: %s", table));
+                }
+
+                // Then hard-truncate if any
+                if (tableHardTruncateBefores.containsKey(table)) {
+                    Instant ts = tableHardTruncateBefores.get(table);
+                    LOG.info(String.format("Hard Truncating: %s [%s]", table, ts.toString()));
+                    client.truncate(
+                            DEFAULT_SCHEMA,
+                            table,
+                            DELETED_SYS_COLUMN,
+                            SYNCED_SYS_COLUMN,
+                            ts,
+                            false,
+                            config);
+                    LOG.info(String.format("Hard Truncate succeeded: %s", table));
                 }
             }
         }
@@ -334,7 +356,6 @@ public final class SdkDestinationTester {
             Path path,
             SecretKey key,
             CsvSchema csvSchema,
-            Instant ts,
             String opName,
             List<Column> columns,
             List<Object> rows,
@@ -349,11 +370,10 @@ public final class SdkDestinationTester {
             for (var row : rows) {
                 Map<String, Object> data = (Map<String, Object>) row;
 
-                if (data.containsKey(SYNCED_SYS_COLUMN)) {
+                if (!data.containsKey(SYNCED_SYS_COLUMN)) {
                     throw new RuntimeException(
                             String.format(
-                                    "System column '%s' is found in op '%s' for table: %s",
-                                    SYNCED_SYS_COLUMN, opName, table));
+                                    "System column '%s' is missing from table: %s", SYNCED_SYS_COLUMN, table));
                 }
 
                 if (data.containsKey(DELETED_SYS_COLUMN)) {
@@ -370,15 +390,12 @@ public final class SdkDestinationTester {
                                     ID_SYS_COLUMN, opName, table));
                 }
 
-
                 if (!data.containsKey(ID_SYS_COLUMN) && columnNames.contains(ID_SYS_COLUMN)) {
                     throw new RuntimeException(
                             String.format(
                                     "Column '_fivetran_id' is missing in op '%s' for pkeyless table: %s",
                                     opName, table));
                 }
-
-                data.put(SYNCED_SYS_COLUMN, ts);
 
                 if (opName.equals("upsert")) {
                     data.put(DELETED_SYS_COLUMN, false);
@@ -420,6 +437,12 @@ public final class SdkDestinationTester {
         }
         CipherOutputStream cipherStream = SdkCrypto.encryptWrite(outputStream, secretKey);
         return new ZstdOutputStream(cipherStream, -5);
+    }
+
+    private List<Column> shuffle(List<Column> incoming) {
+        List<Column> columns = new ArrayList<>(incoming);
+        Collections.shuffle(columns);
+        return columns;
     }
 
     private CsvSchema buildCsvSchema(List<Column> columns) {
@@ -539,7 +562,8 @@ public final class SdkDestinationTester {
     private void separateOpsToTables(
             List<Map<String, Object>> ops,
             Map<String, Map<String, List<Object>>> tableDMLs,
-            Map<String, Instant> tableTruncates) {
+            Map<String, Instant> tableTruncateBefores,
+            Map<String, Instant> tableHardTruncateBefores) {
 
         for (var opEntry : ops) {
             if (opEntry.size() > 1) {
@@ -548,7 +572,9 @@ public final class SdkDestinationTester {
             String opName = opEntry.keySet().toArray()[0].toString();
             Object op = opEntry.values().toArray()[0];
 
-            if (opName.startsWith("ups") | opName.startsWith("upd") | opName.startsWith("del")) {
+            if (opName.equalsIgnoreCase("upsert") ||
+                    opName.equalsIgnoreCase("update") ||
+                    opName.equalsIgnoreCase("delete")) {
                 for (var entry2 : ((Map<String, Object>) op).entrySet()) {
                     String table = entry2.getKey();
                     if (!tableDMLs.containsKey(table)) {
@@ -556,6 +582,19 @@ public final class SdkDestinationTester {
                     }
 
                     List<Object> rows = (List<Object>) entry2.getValue();
+
+                    // Add fivetran synced column
+                    for (var row : rows) {
+                        Map<String, Object> rowData = (Map<String, Object>) row;
+                        if (((Map<?, ?>) row).containsKey(SYNCED_SYS_COLUMN)) {
+                            throw new RuntimeException(SYNCED_SYS_COLUMN + " is a system column");
+                        }
+
+                        rowData.put(SYNCED_SYS_COLUMN, Instant.ofEpochMilli(System.currentTimeMillis()));
+                        // Add a tiny bit of delay to simulate a real sync
+                        delay();
+                    }
+
                     Map<String, List<Object>> tableDML = tableDMLs.get(table);
                     if (tableDML.containsKey(opName)) {
                         tableDML.get(opName).addAll(rows);
@@ -564,23 +603,47 @@ public final class SdkDestinationTester {
                     }
                 }
 
-            } else if (opName.startsWith("tru")) {
+            } else if (opName.equalsIgnoreCase("truncate_before")) {
                 if (!(op instanceof Collection<?>)) {
-                    throw new RuntimeException("Truncate should have a list of table name(s)");
+                    throw new RuntimeException("TruncateBefore should have a list of table name(s)");
                 }
 
                 for (String table : (Collection<String>) op) {
-                    if (tableTruncates.containsKey(table)) {
-                        LOG.fine("Another truncate for table: " + table);
+                    if (tableTruncateBefores.containsKey(table)) {
+                        LOG.fine("Another truncate_before for table: " + table);
                     }
 
-                    tableTruncates.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
+                    tableTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
+                }
+
+            } else if (opName.equalsIgnoreCase("hard_truncate_before")) {
+                if (!(op instanceof Collection<?>)) {
+                    throw new RuntimeException("HardTruncateBefore should have a list of table name(s)");
+                }
+
+                for (String table : (Collection<String>) op) {
+                    if (tableTruncateBefores.containsKey(table)) {
+                        LOG.fine("Another hard_truncate_before for table: " + table);
+                    }
+
+                    tableHardTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
                 }
 
             } else {
                 throw new RuntimeException(
                         "Unexpected entry: " + opName + " | " + op.toString() + " | " + op.getClass());
             }
+
+            // Add a tiny bit of delay to simulate a real sync
+            delay();
+        }
+    }
+
+    private static void delay() {
+        try {
+            TimeUnit.MILLISECONDS.sleep(50);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
     }
 
