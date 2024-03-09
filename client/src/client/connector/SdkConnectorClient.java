@@ -5,6 +5,9 @@ import fivetran_sdk.Operation;
 import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
@@ -14,7 +17,7 @@ public class SdkConnectorClient {
     public static final String DEFAULT_GRPC_HOST = "127.0.0.1";
     public static final int DEFAULT_GRPC_PORT = 50051;
     private static final int MAX_RETRY = 30;
-    private static final int INITIAL_WAIT_TIME = 500; // msec
+    private static final Duration WAIT_TIME = Duration.of(1, ChronoUnit.SECONDS);
     public static final int MAX_MESSAGE_SIZE = 32 * 1024 * 1024;
 
     private final ManagedChannel channel;
@@ -121,13 +124,12 @@ public class SdkConnectorClient {
     public static void waitForServer(ManagedChannel channel) {
         try {
             int retry = 0;
-            long waitTime = INITIAL_WAIT_TIME;
             while (retry++ <= MAX_RETRY) {
                 ConnectivityState connectivityState = channel.getState(true);
                 if (connectivityState == ConnectivityState.READY) {
                     return;
                 }
-                Thread.sleep(waitTime);
+                TimeUnit.MILLISECONDS.sleep(WAIT_TIME.toMillis());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
