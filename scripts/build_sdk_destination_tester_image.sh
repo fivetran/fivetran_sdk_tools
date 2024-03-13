@@ -2,7 +2,7 @@
 
 set -e
 
-VERSION="024.0309.001"
+VERSION="024.0312.001"
 
 # -- Don't forget the following --
 # gcloud auth login
