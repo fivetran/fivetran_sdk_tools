@@ -45,7 +45,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0309.001";
+    private static final String VERSION = "024.0312.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -181,10 +181,6 @@ public final class SdkDestinationTester {
         Map<String, Table> tables = new HashMap<>();
         // <schema-table, Map<op-type, rows>>
         Map<String, Map<String, List<Object>>> tableDMLs = new HashMap<>();
-        // <schema-table, truncateBefore>
-        Map<String, Instant> tableTruncateBefores = new HashMap<>();
-        // <schema-table, truncateBefore>
-        Map<String, Instant> tableHardTruncateBefores = new HashMap<>();
 
         // describeTable
         if (batch.containsKey("describe_table")) {
@@ -261,13 +257,18 @@ public final class SdkDestinationTester {
             }
         }
 
-        // Upsert, Update, Delete, Truncate (with timestamp)
+        // --- Upsert, Update, Delete, Truncate (with timestamp)
+        // <schema-table, timestamp>
+        Map<String, Instant> softTruncateBefores = new HashMap<>();
+        // <schema-table, timestamp>
+        Map<String, Instant> hardTruncateBefores = new HashMap<>();
         if (batch.containsKey("ops")) {
             separateOpsToTables(
+                    tables,
                     (List<Map<String, Object>>) batch.get("ops"),
                     tableDMLs,
-                    tableTruncateBefores,
-                    tableHardTruncateBefores);
+                    softTruncateBefores,
+                    hardTruncateBefores);
 
             // Create batch files per table
             for (var entry : tableDMLs.entrySet()) {
@@ -320,8 +321,8 @@ public final class SdkDestinationTester {
                 LOG.info(String.format("WriteBatch succeeded: %s", table));
 
                 // Then truncate if any
-                if (tableTruncateBefores.containsKey(table)) {
-                    Instant ts = tableTruncateBefores.get(table);
+                if (softTruncateBefores.containsKey(table)) {
+                    Instant ts = softTruncateBefores.get(table);
                     LOG.info(String.format("Truncating: %s [%s]", table, ts.toString()));
                     client.truncate(
                             DEFAULT_SCHEMA,
@@ -335,8 +336,8 @@ public final class SdkDestinationTester {
                 }
 
                 // Then hard-truncate if any
-                if (tableHardTruncateBefores.containsKey(table)) {
-                    Instant ts = tableHardTruncateBefores.get(table);
+                if (hardTruncateBefores.containsKey(table)) {
+                    Instant ts = hardTruncateBefores.get(table);
                     LOG.info(String.format("Hard Truncating: %s [%s]", table, ts.toString()));
                     client.truncate(
                             DEFAULT_SCHEMA,
@@ -370,19 +371,6 @@ public final class SdkDestinationTester {
             for (var row : rows) {
                 Map<String, Object> data = (Map<String, Object>) row;
 
-                if (!data.containsKey(SYNCED_SYS_COLUMN)) {
-                    throw new RuntimeException(
-                            String.format(
-                                    "System column '%s' is missing from table: %s", SYNCED_SYS_COLUMN, table));
-                }
-
-                if (data.containsKey(DELETED_SYS_COLUMN)) {
-                    throw new RuntimeException(
-                            String.format(
-                                    "System column '%s' is found in op '%s' for table: %s",
-                                    DELETED_SYS_COLUMN, opName, table));
-                }
-
                 if (data.containsKey(ID_SYS_COLUMN) && !columnNames.contains(ID_SYS_COLUMN)) {
                     throw new RuntimeException(
                             String.format(
@@ -397,24 +385,26 @@ public final class SdkDestinationTester {
                                     opName, table));
                 }
 
-                if (opName.equals("upsert")) {
-                    data.put(DELETED_SYS_COLUMN, false);
-                } else if (opName.equals("update")) {
-                    data.put(DELETED_SYS_COLUMN, false);
-                } else if (opName.equals("delete")) {
-                    data.put(DELETED_SYS_COLUMN, true);
+                if (columnNames.contains(DELETED_SYS_COLUMN)) {
+                    if (opName.equalsIgnoreCase("upsert")) {
+                        data.put(DELETED_SYS_COLUMN, false);
+                    } else if (opName.equalsIgnoreCase("update")) {
+                        if (!data.containsKey(DELETED_SYS_COLUMN)) {
+                            data.put(DELETED_SYS_COLUMN, false);
+                        }
+                    }
                 }
 
                 for (var c : columns) {
                     if (!data.containsKey(c.getName())) {
-                        if (opName.equals("upsert")) {
+                        if (opName.equalsIgnoreCase("upsert")) {
                             throw new RuntimeException(
                                     String.format(
                                             "Column '%s' is missing in op '%s' for table: %s",
                                             c.getName(), opName, table));
-                        } else if (opName.equals("update")) {
+                        } else if (opName.equalsIgnoreCase("update")) {
                             data.put(c.getName(), DEFAULT_UPDATE_UNMODIFIED);
-                        } else if (opName.equals("delete")) {
+                        } else if (opName.equalsIgnoreCase("delete")) {
                             data.put(c.getName(), null);
                         } else {
                             throw new RuntimeException("Unrecognized op: " + opName);
@@ -511,10 +501,6 @@ public final class SdkDestinationTester {
                 .setName(SYNCED_SYS_COLUMN)
                 .setType(DataType.UTC_DATETIME)
                 .build());
-        columns.add(Column.newBuilder()
-                .setName(DELETED_SYS_COLUMN)
-                .setType(DataType.BOOLEAN)
-                .build());
         if (pkeys.isEmpty()) {
             columns.add(Column.newBuilder()
                     .setName(ID_SYS_COLUMN)
@@ -560,10 +546,11 @@ public final class SdkDestinationTester {
     }
 
     private void separateOpsToTables(
+            Map<String, Table> tables,
             List<Map<String, Object>> ops,
             Map<String, Map<String, List<Object>>> tableDMLs,
-            Map<String, Instant> tableTruncateBefores,
-            Map<String, Instant> tableHardTruncateBefores) {
+            Map<String, Instant> softTruncateBefores,
+            Map<String, Instant> hardTruncateBefores) {
 
         for (var opEntry : ops) {
             if (opEntry.size() > 1) {
@@ -574,6 +561,7 @@ public final class SdkDestinationTester {
 
             if (opName.equalsIgnoreCase("upsert") ||
                     opName.equalsIgnoreCase("update") ||
+                    opName.equalsIgnoreCase("soft_delete") ||
                     opName.equalsIgnoreCase("delete")) {
                 for (var entry2 : ((Map<String, Object>) op).entrySet()) {
                     String table = entry2.getKey();
@@ -583,50 +571,67 @@ public final class SdkDestinationTester {
 
                     List<Object> rows = (List<Object>) entry2.getValue();
 
-                    // Add fivetran synced column
+                    // Add system columns as needed
                     for (var row : rows) {
                         Map<String, Object> rowData = (Map<String, Object>) row;
                         if (((Map<?, ?>) row).containsKey(SYNCED_SYS_COLUMN)) {
                             throw new RuntimeException(SYNCED_SYS_COLUMN + " is a system column");
                         }
-
                         rowData.put(SYNCED_SYS_COLUMN, Instant.ofEpochMilli(System.currentTimeMillis()));
+
+                        if (((Map<?, ?>) row).containsKey(DELETED_SYS_COLUMN)) {
+                            throw new RuntimeException(DELETED_SYS_COLUMN + " is a system column");
+                        }
+
+                        if (opName.equalsIgnoreCase("soft_delete")) {
+                            rowData.put(DELETED_SYS_COLUMN, true);
+                            if (!containsDeletedSysColumn(tables.get(table))) {
+                                Table newTable = addDeletedSysColumn(tables.get(table));
+                                tables.put(table, newTable);
+                            }
+                        }
+
                         // Add a tiny bit of delay to simulate a real sync
                         delay();
                     }
 
                     Map<String, List<Object>> tableDML = tableDMLs.get(table);
-                    if (tableDML.containsKey(opName)) {
-                        tableDML.get(opName).addAll(rows);
+                    String remappedOpName =
+                            (opName.equalsIgnoreCase("soft_delete")) ? "update" : opName;
+                    if (tableDML.containsKey(remappedOpName)) {
+                        tableDML.get(remappedOpName).addAll(rows);
                     } else {
-                        tableDML.put(opName, new ArrayList<>(rows));
+                        tableDML.put(remappedOpName, new ArrayList<>(rows));
                     }
                 }
 
+            } else if (opName.equalsIgnoreCase("soft_truncate_before")) {
+                if (!(op instanceof Collection<?>)) {
+                    throw new RuntimeException("SoftTruncateBefore should have a list of table name(s)");
+                }
+
+                for (String table : (Collection<String>) op) {
+                    if (softTruncateBefores.containsKey(table)) {
+                        LOG.fine("Another soft_truncate_before for table: " + table);
+                    }
+
+                    softTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
+                    if (!containsDeletedSysColumn(tables.get(table))) {
+                        Table newTable = addDeletedSysColumn(tables.get(table));
+                        tables.put(table, newTable);
+                    }
+                }
             } else if (opName.equalsIgnoreCase("truncate_before")) {
                 if (!(op instanceof Collection<?>)) {
                     throw new RuntimeException("TruncateBefore should have a list of table name(s)");
                 }
 
                 for (String table : (Collection<String>) op) {
-                    if (tableTruncateBefores.containsKey(table)) {
+                    if (softTruncateBefores.containsKey(table)) {
                         LOG.fine("Another truncate_before for table: " + table);
                     }
 
-                    tableTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
-                }
-
-            } else if (opName.equalsIgnoreCase("hard_truncate_before")) {
-                if (!(op instanceof Collection<?>)) {
-                    throw new RuntimeException("HardTruncateBefore should have a list of table name(s)");
-                }
-
-                for (String table : (Collection<String>) op) {
-                    if (tableTruncateBefores.containsKey(table)) {
-                        LOG.fine("Another hard_truncate_before for table: " + table);
-                    }
-
-                    tableHardTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
+                    hardTruncateBefores.put(table, Instant.ofEpochMilli(System.currentTimeMillis()));
                 }
 
             } else {
@@ -637,6 +642,27 @@ public final class SdkDestinationTester {
             // Add a tiny bit of delay to simulate a real sync
             delay();
         }
+    }
+
+    private Table addDeletedSysColumn(Table table) {
+        List<Column> columns = new ArrayList<>(table.getColumnsList());
+        columns.add(Column.newBuilder()
+                .setName(DELETED_SYS_COLUMN)
+                .setType(DataType.BOOLEAN)
+                .build());
+        return Table.newBuilder()
+                .setName(table.getName())
+                .addAllColumns(columns)
+                .build();
+    }
+
+    private boolean containsDeletedSysColumn(Table table) {
+        for (Column c : table.getColumnsList()) {
+            if (c.getName().equalsIgnoreCase(DELETED_SYS_COLUMN)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void delay() {
