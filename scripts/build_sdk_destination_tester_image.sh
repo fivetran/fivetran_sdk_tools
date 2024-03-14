@@ -4,10 +4,6 @@ set -e
 
 VERSION="024.0314.001"
 
-# -- Don't forget the following --
-# gcloud auth login
-# docker login
-
 cd "$(git rev-parse --show-toplevel)"
 
 # Copy the latest proto files

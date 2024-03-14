@@ -2,11 +2,7 @@
 
 set -e
 
-VERSION="024.0304.001"
-
-# -- Don't forget the following --
-# gcloud auth login
-# docker login
+VERSION="024.0314.001"
 
 cd "$(git rev-parse --show-toplevel)"
 
