@@ -104,6 +104,10 @@ public final class MockWarehouse implements AutoCloseable {
     public void upsert(SchemaTable schemaTable, List<String> pkeys, Map<String, ValueType> dataMap) {
         LOG.fine(String.format("[Upsert]: %s  Data: %s", schemaTable, dataMap));
 
+        if (pkeys.isEmpty()) {
+            throw new RuntimeException("Primary keyless tables are not supported");
+        }
+
         String columnNames = dataMap.keySet().stream().map(MockWarehouse::renamer).collect(joining(","));
         String values = String.join(",", valueTypeToString(dataMap).values());
         String updateOnConflict =
@@ -113,17 +117,14 @@ public final class MockWarehouse implements AutoCloseable {
                         .map(col -> String.format("%s = excluded.%s", renamer(col), renamer(col)))
                         .collect(joining(","));
 
-        String sqlUpsert =
-                "INSERT INTO "
-                        + schemaTable.toString(MockWarehouse::renamer)
-                        + "("
-                        + columnNames
-                        + ") VALUES ("
-                        + values
-                        + ") ON CONFLICT ("
-                        + String.join(",", pkeys)
-                        + ") DO UPDATE SET "
-                        + updateOnConflict;
+        String sqlUpsert = String.format("INSERT INTO %s (%s) VALUES (%s)",
+                schemaTable.toString(MockWarehouse::renamer),
+                columnNames,
+                values);
+        if (!updateOnConflict.isEmpty()) {
+            sqlUpsert += String.format(" ON CONFLICT (%s) DO UPDATE SET %s",
+                    String.join(",", pkeys), updateOnConflict);
+        }
 
         try (Connection c = getConnection();
                 Statement s = c.createStatement()) {
