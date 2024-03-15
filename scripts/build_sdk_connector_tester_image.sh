@@ -2,7 +2,7 @@
 
 set -e
 
-VERSION="024.0314.001"
+VERSION="024.0314.002"
 
 cd "$(git rev-parse --show-toplevel)"
 

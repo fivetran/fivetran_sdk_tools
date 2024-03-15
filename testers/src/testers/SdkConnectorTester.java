@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "024.0314.001";
+    private static final String VERSION = "024.0314.002";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
@@ -69,7 +69,7 @@ public final class SdkConnectorTester {
         String port;
 
         @CommandLine.Option(
-                names = {"--custom-sdk"},
+                names = {"--customer-sdk"},
                 description = "",
                 arity="1")
         Boolean customSdk = false;
@@ -148,15 +148,14 @@ public final class SdkConnectorTester {
         }
     }
 
-    public void run(String workingDir, String destinationSchema, boolean customSdk,
-                    String grpcHost, int grpcPort) {
+    public void run(String workingDir, String destinationSchema, boolean customerSdk, String grpcHost, int grpcPort) {
         LOG.info("Version: " + VERSION);
         LOG.info("Directory: " + workingDir);
         LOG.info("Destination schema: " + destinationSchema);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
-        if (customSdk) {
-            LOG.info("Custom SDK mode enabled");
+        if (customerSdk) {
+            LOG.info("Customer SDK tester mode is enabled");
         }
 
         Path schemaSelectionsFilePath = Paths.get(workingDir, SCHEMA_SELECTION_FILE);
@@ -197,33 +196,40 @@ public final class SdkConnectorTester {
             LOG.info("Previous state:\n" + stateJson);
 
             SchemaResponse schemaResponse = client.schema(creds, stateJson);
-            if (Files.exists(schemaSelectionsFilePath)) {
-                // TODO: Handle changes in SchemaResponse
-            } else {
-                createSchemaFileForSelections(schemaResponse, destinationSchema, schemaSelectionsFilePath);
-                LOG.info("Schema selection file is generated");
 
-                if (!customSdk) {
-                    LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
-                    System.in.read();
+            if (!customerSdk) {
+                if (Files.exists(schemaSelectionsFilePath)) {
+                    // TODO: Handle changes in SchemaResponse
+                } else {
+                    boolean schemaFileCreated =
+                            createSchemaFileForSelections(schemaResponse, destinationSchema, schemaSelectionsFilePath);
+                    if (schemaFileCreated) {
+                        LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
+                        System.in.read();
+                    }
                 }
+
+                LOG.info("Schema Selections:\n" + Files.readString(schemaSelectionsFilePath));
             }
 
-            LOG.info("Schema Selections:\n" + Files.readString(schemaSelectionsFilePath));
-            Selection selection = readSchemaFileForSelections(schemaSelectionsFilePath, destinationSchema);
-            boolean supported =
-                    SdkConnectorClient.walkSchemaResponse(
-                            schemaResponse,
-                            (schema, tables) -> {
-                                for (Table table : tables) {
-                                    String schemaName = schema.orElse(destinationSchema);
-                                    if (isIncluded(schemaName, table.getName(), selection)) {
-                                        output.handleSchemaChange(schemaName, table);
+            Selection selection = customerSdk ? Selection.newBuilder().build() :
+                    readSchemaFileForSelections(schemaSelectionsFilePath, destinationSchema);
+
+            if (!customerSdk) {
+                boolean supported =
+                        SdkConnectorClient.walkSchemaResponse(
+                                schemaResponse,
+                                (schema, tables) -> {
+                                    for (Table table : tables) {
+                                        String schemaName = schema.orElse(destinationSchema);
+                                        if (isIncluded(schemaName, table.getName(), selection)) {
+                                            output.handleSchemaChange(schemaName, table);
+                                        }
                                     }
-                                }
-                            });
-            if (!supported) {
-                LOG.info("This connector does not support schema discovery");
+                                });
+                if (!supported) {
+                    LOG.info("This connector does not support schema discovery");
+                }
             }
 
             client.update(creds, stateJson, selection, output::enqueueOperation, System.out::println);
@@ -234,7 +240,7 @@ public final class SdkConnectorTester {
         } catch (Throwable e) {
             LOG.log(Level.SEVERE, "Sync FAILED", e);
         } finally {
-            if (customSdk) {
+            if (customerSdk) {
                 try {
                     Files.deleteIfExists(configFilePath);
                 } catch (IOException e) {
@@ -289,7 +295,7 @@ public final class SdkConnectorTester {
         }
     }
 
-    private static void createSchemaFileForSelections(SchemaResponse response, String defaultSchema, Path path)
+    private static boolean createSchemaFileForSelections(SchemaResponse response, String defaultSchema, Path path)
             throws IOException {
         SchemaResponse.ResponseCase responseCase = response.getResponseCase();
 
@@ -301,17 +307,18 @@ public final class SdkConnectorTester {
                         fw.write(SCHEMA_LABEL + "\t\t[x]  " + schema.getName() + "\n");
                         writeTables(schema.getTablesList(), fw);
                     }
-                    break;
+                    LOG.info("Schema selection file is generated");
+                    return true;
 
                 case WITHOUT_SCHEMA:
                     fw.write(SCHEMA_LABEL + "\t\t[x]  " + defaultSchema + "\n");
                     TableList tableList = response.getWithoutSchema();
                     writeTables(tableList.getTablesList(), fw);
-                    break;
+                    LOG.info("Schema selection file is generated");
+                    return true;
 
                 case SCHEMA_RESPONSE_NOT_SUPPORTED:
-                    System.out.println("Schema discovery is not supported!");
-                    break;
+                    return false;
 
                 default:
                     throw new RuntimeException("Unknown response case: " + responseCase);
