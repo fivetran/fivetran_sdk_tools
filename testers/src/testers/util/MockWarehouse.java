@@ -123,7 +123,7 @@ public final class MockWarehouse implements AutoCloseable {
                 values);
         if (!updateOnConflict.isEmpty()) {
             sqlUpsert += String.format(" ON CONFLICT (%s) DO UPDATE SET %s",
-                    String.join(",", pkeys), updateOnConflict);
+                    String.join(",", pkeys.stream().map(MockWarehouse::renamer).toList()), updateOnConflict);
         }
 
         try (Connection c = getConnection();
@@ -283,9 +283,10 @@ public final class MockWarehouse implements AutoCloseable {
 
                         String columnTypes =
                                 columns.stream()
-                                        .map(c -> String.format("%s %s", c.getName(), sqlType(c)))
+                                        .map(c -> String.format("%s %s", renamer(c.getName()), sqlType(c)))
                                         .collect(joining(","));
-                        String pkeys = String.join(",", getPrimaryKeys(columns));
+                        String pkeys = String.join(",",
+                                getPrimaryKeys(columns).stream().map(MockWarehouse::renamer).toList());
                         String pkeyClause = (pkeys.isEmpty()) ? "" : ", PRIMARY KEY(" + pkeys + ")";
                         String sqlCreateTable =
                                 String.format("CREATE TABLE IF NOT EXISTS %s (%s%s)",
