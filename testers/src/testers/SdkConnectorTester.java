@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "024.0314.002";
+    private static final String VERSION = "024.0315.001";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
@@ -148,13 +148,18 @@ public final class SdkConnectorTester {
         }
     }
 
-    public void run(String workingDir, String destinationSchema, boolean customerSdk, String grpcHost, int grpcPort) {
+    public void run(
+            String workingDir,
+            String destinationSchema,
+            boolean isCustomerSdk,
+            String grpcHost,
+            int grpcPort) throws IOException{
         LOG.info("Version: " + VERSION);
         LOG.info("Directory: " + workingDir);
         LOG.info("Destination schema: " + destinationSchema);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
-        if (customerSdk) {
+        if (isCustomerSdk) {
             LOG.info("Customer SDK tester mode is enabled");
         }
 
@@ -181,14 +186,16 @@ public final class SdkConnectorTester {
             LOG.info("Configuration:\n" + strConfig);
             Map<String, String> creds = JSON.readValue(strConfig, new MapTypeReference());
 
-            LOG.info("Running setup tests");
-            for (ConfigurationTest connectorTest : configurationForm.getTestsList()) {
-                Optional<String> testResponse = client.test(connectorTest.getName(), creds);
-                String result = testResponse.orElse("PASSED");
-                System.out.println("[" + connectorTest.getLabel() + "]: " + result);
-                if (!testResponse.isEmpty()) {
-                    LOG.severe("Exiting due to test failure!");
-                    System.exit(1);
+            if (!isCustomerSdk) {
+                LOG.info("Running setup tests");
+                for (ConfigurationTest connectorTest : configurationForm.getTestsList()) {
+                    Optional<String> testResponse = client.test(connectorTest.getName(), creds);
+                    String result = testResponse.orElse("PASSED");
+                    System.out.println("[" + connectorTest.getLabel() + "]: " + result);
+                    if (!testResponse.isEmpty()) {
+                        LOG.severe("Exiting due to test failure!");
+                        System.exit(1);
+                    }
                 }
             }
 
@@ -196,40 +203,38 @@ public final class SdkConnectorTester {
             LOG.info("Previous state:\n" + stateJson);
 
             SchemaResponse schemaResponse = client.schema(creds, stateJson);
-
-            if (!customerSdk) {
+            Selection selection;
+            if (isCustomerSdk) {
+                selection = createSelectionFromSchemaResponse(schemaResponse, destinationSchema);
+            } else {
                 if (Files.exists(schemaSelectionsFilePath)) {
                     // TODO: Handle changes in SchemaResponse
                 } else {
                     boolean schemaFileCreated =
-                            createSchemaFileForSelections(schemaResponse, destinationSchema, schemaSelectionsFilePath);
-                    if (schemaFileCreated) {
+                            createSchemaSelectionFile(schemaResponse, destinationSchema, schemaSelectionsFilePath);
+                    if (schemaFileCreated && !isCustomerSdk) {
+                        LOG.info("Schema selection file is generated");
                         LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
                         System.in.read();
                     }
                 }
-
                 LOG.info("Schema Selections:\n" + Files.readString(schemaSelectionsFilePath));
+                selection = readSchemaFileForSelections(schemaSelectionsFilePath, destinationSchema);
             }
 
-            Selection selection = customerSdk ? Selection.newBuilder().build() :
-                    readSchemaFileForSelections(schemaSelectionsFilePath, destinationSchema);
-
-            if (!customerSdk) {
-                boolean supported =
-                        SdkConnectorClient.walkSchemaResponse(
-                                schemaResponse,
-                                (schema, tables) -> {
-                                    for (Table table : tables) {
-                                        String schemaName = schema.orElse(destinationSchema);
-                                        if (isIncluded(schemaName, table.getName(), selection)) {
-                                            output.handleSchemaChange(schemaName, table);
-                                        }
+            boolean supported =
+                    SdkConnectorClient.walkSchemaResponse(
+                            schemaResponse,
+                            (schema, tables) -> {
+                                for (Table table : tables) {
+                                    String schemaName = schema.orElse(destinationSchema);
+                                    if (isIncluded(schemaName, table.getName(), selection)) {
+                                        output.handleSchemaChange(schemaName, table);
                                     }
-                                });
-                if (!supported) {
-                    LOG.info("This connector does not support schema discovery");
-                }
+                                }
+                            });
+            if (!supported) {
+                LOG.info("This connector does not support schema discovery");
             }
 
             client.update(creds, stateJson, selection, output::enqueueOperation, System.out::println);
@@ -240,20 +245,80 @@ public final class SdkConnectorTester {
         } catch (Throwable e) {
             LOG.log(Level.SEVERE, "Sync FAILED", e);
         } finally {
-            if (customerSdk) {
-                try {
-                    Files.deleteIfExists(configFilePath);
-                } catch (IOException e) {
-                }
-
-                try {
-                    Files.deleteIfExists(schemaSelectionsFilePath);
-                } catch (IOException e) {
-                }
+            if (isCustomerSdk) {
+                Files.deleteIfExists(configFilePath);
+                Files.deleteIfExists(schemaSelectionsFilePath);
             }
         }
 
         System.exit(0);
+    }
+
+    private Selection createSelectionFromSchemaResponse(SchemaResponse response, String defaultSchema) {
+        SchemaResponse.ResponseCase responseCase = response.getResponseCase();
+        switch (responseCase) {
+            case WITH_SCHEMA:
+                TablesWithSchema.Builder withSchemaBuilder = TablesWithSchema.newBuilder();
+
+                SchemaList schemaList = response.getWithSchema();
+                for (Schema schema : schemaList.getSchemasList()) {
+
+                    SchemaSelection.Builder schemaSelection = SchemaSelection.newBuilder()
+                            .setSchemaName(schema.getName())
+                            .setIncluded(true);
+
+                    for (Table table : schema.getTablesList()) {
+                        Map<String, Boolean> columns =
+                            table.getColumnsList()
+                                    .stream()
+                                    .collect(Collectors.toMap(Column::getName, v -> Boolean.TRUE));
+
+                        TableSelection tableSelection = TableSelection.newBuilder()
+                                .setTableName(table.getName())
+                                .setIncluded(true)
+                                .putAllColumns(columns)
+                                .build();
+
+
+                        schemaSelection = schemaSelection.addTables(tableSelection);
+                    }
+
+                    withSchemaBuilder = withSchemaBuilder.addSchemas(schemaSelection.build());
+                }
+
+                return Selection.newBuilder()
+                        .setWithSchema(withSchemaBuilder.build())
+                        .build();
+
+            case WITHOUT_SCHEMA:
+                TablesWithNoSchema.Builder withoutSchemaBuilder = TablesWithNoSchema.newBuilder();
+                TableList tableList = response.getWithoutSchema();
+
+                for (Table table : tableList.getTablesList()) {
+                    Map<String, Boolean> columns =
+                            table.getColumnsList()
+                                    .stream()
+                                    .collect(Collectors.toMap(Column::getName, v -> Boolean.TRUE));
+
+                    TableSelection tableSelection = TableSelection.newBuilder()
+                            .setTableName(table.getName())
+                            .setIncluded(true)
+                            .putAllColumns(columns)
+                            .build();
+
+                    withoutSchemaBuilder = withoutSchemaBuilder.addTables(tableSelection);
+                }
+
+                return Selection.newBuilder()
+                        .setWithoutSchema(withoutSchemaBuilder.build())
+                        .build();
+
+            case SCHEMA_RESPONSE_NOT_SUPPORTED:
+                return Selection.newBuilder().build();
+
+            default:
+                throw new RuntimeException("Unknown response case: " + responseCase);
+        }
     }
 
     private static boolean isIncluded(String schema, String table, Selection selection) {
@@ -295,7 +360,7 @@ public final class SdkConnectorTester {
         }
     }
 
-    private static boolean createSchemaFileForSelections(SchemaResponse response, String defaultSchema, Path path)
+    private static boolean createSchemaSelectionFile(SchemaResponse response, String defaultSchema, Path path)
             throws IOException {
         SchemaResponse.ResponseCase responseCase = response.getResponseCase();
 
@@ -307,14 +372,12 @@ public final class SdkConnectorTester {
                         fw.write(SCHEMA_LABEL + "\t\t[x]  " + schema.getName() + "\n");
                         writeTables(schema.getTablesList(), fw);
                     }
-                    LOG.info("Schema selection file is generated");
                     return true;
 
                 case WITHOUT_SCHEMA:
                     fw.write(SCHEMA_LABEL + "\t\t[x]  " + defaultSchema + "\n");
                     TableList tableList = response.getWithoutSchema();
                     writeTables(tableList.getTablesList(), fw);
-                    LOG.info("Schema selection file is generated");
                     return true;
 
                 case SCHEMA_RESPONSE_NOT_SUPPORTED:
