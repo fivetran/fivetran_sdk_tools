@@ -130,6 +130,11 @@ public final class MockWarehouse implements AutoCloseable {
                 Statement s = c.createStatement()) {
             s.execute(sqlUpsert);
         } catch (SQLException e) {
+            if (e.getMessage().toLowerCase().contains("duplicate key")){
+                update(schemaTable, pkeys, dataMap);
+                return;
+            }
+
             throw new RuntimeException(e);
         }
     }
@@ -144,6 +149,11 @@ public final class MockWarehouse implements AutoCloseable {
                         .filter(e -> !pkeys.contains(e.getKey()))
                         .map(e -> String.format("%s=%s", renamer(e.getKey()), e.getValue()))
                         .collect(joining(","));
+
+        if (values.isEmpty()) {
+            LOG.fine("There are no non-pkey columns to update");
+            return;
+        }
 
         String where =
                 valueTypeToString(dataMap)
