@@ -48,7 +48,7 @@ public class MockWarehouseSpec {
                                 Column.newBuilder().setName("id1").setType(DataType.INT).setPrimaryKey(true).build(),
                                 Column.newBuilder().setName("id2").setType(DataType.INT).setPrimaryKey(true).build(),
                                 Column.newBuilder()
-                                        .setName("isL")
+                                        .setName("bool")
                                         .setType(DataType.BOOLEAN)
                                         .setPrimaryKey(false)
                                         .build(),
@@ -179,11 +179,11 @@ public class MockWarehouseSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        row.put("isL", ValueType.newBuilder().setBool(true).build());
+        row.put("bool", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
-        row.put("isL", ValueType.newBuilder().setBool(false).build());
+        row.put("bool", ValueType.newBuilder().setBool(false).build());
         row.put("dbl", ValueType.newBuilder().setDouble(100.456d).build());
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
@@ -248,7 +248,7 @@ public class MockWarehouseSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        row.put("isL", ValueType.newBuilder().setBool(true).build());
+        row.put("bool", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
         row.put("new_col", objectToValueType(SYS_CLOCK.instant()));
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
@@ -268,7 +268,7 @@ public class MockWarehouseSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        row.put("isL", ValueType.newBuilder().setBool(true).build());
+        row.put("bool", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
@@ -279,7 +279,7 @@ public class MockWarehouseSpec {
         warehouse.update(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
-        row.put("isL", ValueType.newBuilder().setBool(true).build());
+        row.put("bool", ValueType.newBuilder().setBool(true).build());
         assertEquals(rows.size(), 1);
         assertEquals(rows.get(0), row);
     }
@@ -294,14 +294,14 @@ public class MockWarehouseSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        row.put("isL", ValueType.newBuilder().setBool(true).build());
+        row.put("bool", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         row.clear();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        row.put("isL", ValueType.newBuilder().setBool(false).build());
+        row.put("bool", ValueType.newBuilder().setBool(false).build());
         row.put("dbl", ValueType.newBuilder().setNull(true).build());
         warehouse.update(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
@@ -320,7 +320,7 @@ public class MockWarehouseSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        row.put("isL", ValueType.newBuilder().setBool(true).build());
+        row.put("bool", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
@@ -346,7 +346,7 @@ public class MockWarehouseSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", objectToValueType(1));
         row.put("id2", objectToValueType(100));
-        row.put("isL", objectToValueType(true));
+        row.put("bool", objectToValueType(true));
         row.put("dbl", objectToValueType(2.1235d));
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
@@ -370,7 +370,7 @@ public class MockWarehouseSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", ValueType.newBuilder().setInt(1).build());
         row.put("id2", ValueType.newBuilder().setInt(100).build());
-        row.put("isL", ValueType.newBuilder().setBool(true).build());
+        row.put("bool", ValueType.newBuilder().setBool(true).build());
         row.put("dbl", ValueType.newBuilder().setDouble(2.1235d).build());
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
