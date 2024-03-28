@@ -104,6 +104,11 @@ public class MockWarehouseSpec {
                                         .setType(DataType.NAIVE_DATETIME)
                                         .setPrimaryKey(false)
                                         .build(),
+                                Column.newBuilder()
+                                        .setName("_time")
+                                        .setType(DataType.NAIVE_TIME)
+                                        .setPrimaryKey(false)
+                                        .build(),
                                 Column.newBuilder().setName("_xml").setType(DataType.XML).setPrimaryKey(false).build(),
                                 Column.newBuilder()
                                         .setName("_json")
@@ -159,6 +164,7 @@ public class MockWarehouseSpec {
         row.put("_dbl", objectToValueType(879.345d));
         row.put("_date", objectToValueType(LocalDate.now(SYS_CLOCK)));
         row.put("_dt", objectToValueType(LocalDateTime.now(SYS_CLOCK)));
+        row.put("_time",objectToValueType(LocalTime.now(SYS_CLOCK)));
         row.put("_udt", objectToValueType(SYS_CLOCK.instant()));
         row.put("_xml", objectToValueType("<xml>123</xml>"));
         row.put("_json", objectToValueType("{\"field\": \"value\"}"));
@@ -408,6 +414,7 @@ public class MockWarehouseSpec {
         row.put("_dbl", objectToValueType(879.345d));
         row.put("_date", objectToValueType(LocalDate.now(SYS_CLOCK)));
         row.put("_dt", objectToValueType(LocalDateTime.now(SYS_CLOCK)));
+        row.put("_time",objectToValueType(LocalTime.now(SYS_CLOCK)));
         row.put("_udt", objectToValueType(SYS_CLOCK.instant()));
         row.put("_xml", objectToValueType("<xml>123</xml>"));
         row.put("_json", objectToValueType("{\"field\": \"value\"}"));
@@ -423,6 +430,7 @@ public class MockWarehouseSpec {
         assertEquals(warehouse.getColumnType(schemaTable, "_dbl").get(), DataType.DOUBLE);
         assertEquals(warehouse.getColumnType(schemaTable, "_date").get(), DataType.NAIVE_DATE);
         assertEquals(warehouse.getColumnType(schemaTable, "_dt").get(), DataType.NAIVE_DATETIME);
+        assertEquals(warehouse.getColumnType(schemaTable,"_time").get(), DataType.NAIVE_TIME);
         assertEquals(warehouse.getColumnType(schemaTable, "_udt").get(), DataType.UTC_DATETIME);
         assertEquals(warehouse.getColumnType(schemaTable, "_xml").get(), DataType.STRING);
         assertEquals(warehouse.getColumnType(schemaTable, "_json").get(), DataType.STRING);
