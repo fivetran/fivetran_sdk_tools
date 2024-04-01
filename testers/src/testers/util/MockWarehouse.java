@@ -351,6 +351,7 @@ public final class MockWarehouse implements AutoCloseable {
         else if (type.startsWith("bool")) return DataType.BOOLEAN;
         else if (type.equals("bytea")) return DataType.BINARY;
         else if (type.equals("blob")) return DataType.BINARY;
+        else if (type.equals("time")) return DataType.NAIVE_TIME;
         else if (type.equals("date")) return DataType.NAIVE_DATE;
         else if (type.equals("timestamp")) return DataType.NAIVE_DATETIME;
         else if (type.equals("timestamp with time zone")) return DataType.UTC_DATETIME;
@@ -361,6 +362,7 @@ public final class MockWarehouse implements AutoCloseable {
     private static String sqlType(DataType dataType) {
         if (dataType == DataType.XML || dataType == DataType.JSON) return "STRING";
         else if (dataType == DataType.BINARY) return "BYTEA";
+        else if(dataType == DataType.NAIVE_TIME) return "TIME";
         else if (dataType == DataType.NAIVE_DATE) return "DATE";
         else if (dataType == DataType.NAIVE_DATETIME) return "TIMESTAMP";
         else if (dataType == DataType.UTC_DATETIME) return "TIMESTAMPTZ";

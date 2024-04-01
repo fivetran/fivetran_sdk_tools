@@ -519,6 +519,7 @@ public final class SdkDestinationTester {
             case BOOLEAN:
                 return CsvSchema.ColumnType.BOOLEAN;
             case STRING:
+            case NAIVE_TIME:
             case NAIVE_DATE:
             case NAIVE_DATETIME:
             case UTC_DATETIME:

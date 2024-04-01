@@ -95,6 +95,11 @@ public class MockWarehouseSpec {
                                         .setPrimaryKey(false)
                                         .build(),
                                 Column.newBuilder()
+                                        .setName("_time")
+                                        .setType(DataType.NAIVE_TIME)
+                                        .setPrimaryKey(false)
+                                        .build(),
+                                Column.newBuilder()
                                         .setName("_date")
                                         .setType(DataType.NAIVE_DATE)
                                         .setPrimaryKey(false)
@@ -162,6 +167,7 @@ public class MockWarehouseSpec {
         row.put("_udt", objectToValueType(SYS_CLOCK.instant()));
         row.put("_xml", objectToValueType("<xml>123</xml>"));
         row.put("_json", objectToValueType("{\"field\": \"value\"}"));
+        row.put("_time", objectToValueType(LocalTime.now(SYS_CLOCK)));
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         List<Map<String, ValueType>> rows = warehouse.read(schemaTable);
@@ -411,6 +417,7 @@ public class MockWarehouseSpec {
         row.put("_udt", objectToValueType(SYS_CLOCK.instant()));
         row.put("_xml", objectToValueType("<xml>123</xml>"));
         row.put("_json", objectToValueType("{\"field\": \"value\"}"));
+        row.put("_time", objectToValueType(LocalTime.now(SYS_CLOCK)));
         warehouse.upsert(schemaTable, getPrimaryKeys(table.getColumnsList()), row);
 
         assertEquals(warehouse.getColumnType(schemaTable, "id1").get(), DataType.STRING);
@@ -426,5 +433,6 @@ public class MockWarehouseSpec {
         assertEquals(warehouse.getColumnType(schemaTable, "_udt").get(), DataType.UTC_DATETIME);
         assertEquals(warehouse.getColumnType(schemaTable, "_xml").get(), DataType.STRING);
         assertEquals(warehouse.getColumnType(schemaTable, "_json").get(), DataType.STRING);
+        assertEquals(warehouse.getColumnType(schemaTable, "_time").get(), DataType.NAIVE_TIME);
     }
 }

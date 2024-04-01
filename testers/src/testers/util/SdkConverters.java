@@ -29,6 +29,12 @@ public class SdkConverters {
         else if (c == Double.class) return ValueType.newBuilder().setDouble((Double) raw).build();
         else if (c == java.math.BigDecimal.class || c == java.math.BigInteger.class)
             return ValueType.newBuilder().setDecimal(raw.toString()).build();
+        else if(c == java.time.LocalTime.class || c == java.sql.Time.class) {
+            LocalTime localTime = ((LocalTime) raw);
+            LocalDateTime localDateTime = LocalDateTime.of(1970, 1, 1, localTime.getHour(), localTime.getMinute(), localTime.getSecond(), localTime.getNano());
+            Instant instant = localDateTime.toInstant(ZoneOffset.UTC);
+            return ValueType.newBuilder().setNaiveTime(instantToTimestamp(instant)).build();
+        }
         else if (c == java.time.LocalDate.class) {
             Instant instant = ((LocalDate) raw).atStartOfDay().toInstant(ZoneOffset.UTC);
             return ValueType.newBuilder().setNaiveDate(instantToTimestamp(instant)).build();
@@ -77,6 +83,8 @@ public class SdkConverters {
                 return DataType.FLOAT;
             case DOUBLE:
                 return DataType.DOUBLE;
+            case NAIVE_TIME:
+                return DataType.NAIVE_TIME;
             case NAIVE_DATE:
                 return DataType.NAIVE_DATE;
             case NAIVE_DATETIME:
@@ -127,6 +135,14 @@ public class SdkConverters {
                     break;
                 case DOUBLE:
                     row.put(column, String.valueOf(value.getDouble()));
+                    break;
+                case NAIVE_TIME:
+                    Timestamp tsTime = value.getNaiveTime();
+                    LocalTime naiveTime =
+                            LocalTime.ofInstant(
+                                    Instant.ofEpochSecond(tsTime.getSeconds(), tsTime.getNanos()),
+                                    ZoneId.from(ZoneOffset.UTC));
+                    row.put(column, singleQuotes(naiveTime.toString()));
                     break;
                 case NAIVE_DATE:
                     Timestamp tsDate = value.getNaiveDate();
