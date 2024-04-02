@@ -39,9 +39,14 @@ public class SdkConverters {
             Instant instant = ((LocalDateTime) raw).toInstant(ZoneOffset.UTC);
             return ValueType.newBuilder().setNaiveDatetime(instantToTimestamp(instant)).build();
         } else if (c == java.time.LocalTime.class){
-            Instant instant = LocalDateTime.of(LocalDate.now(),(LocalTime) raw).atZone(ZoneId.systemDefault()).toInstant();
+            Instant instant = LocalDateTime.of(LocalDate.of(0,1,1),(LocalTime) raw).atZone(ZoneId.systemDefault()).toInstant();
             return ValueType.newBuilder().setNaiveTime(instantToTimestamp(instant)).build();
-        }else if (c == java.sql.Timestamp.class) {
+        } else if (c == java.sql.Time.class) {
+            Instant instant = LocalDateTime.of(LocalDate.of(0,1,1),((java.sql.Time) raw).toLocalTime())
+                    .atZone(ZoneId.systemDefault())
+                    .toInstant();
+            return ValueType.newBuilder().setNaiveTime(instantToTimestamp(instant)).build();
+        } else if (c == java.sql.Timestamp.class) {
             Instant instant = ((java.sql.Timestamp) raw).toInstant();
             return ValueType.newBuilder().setNaiveDatetime(instantToTimestamp(instant)).build();
         } else if (c == java.time.OffsetDateTime.class) {
