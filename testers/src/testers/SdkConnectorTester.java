@@ -29,7 +29,7 @@ import picocli.CommandLine;
 public final class SdkConnectorTester {
     private static final Logger LOG = Logger.getLogger(SdkConnectorTester.class.getName());
 
-    private static final String VERSION = "024.0322.001";
+    private static final String VERSION = "024.0408.001";
 
     static final String CONFIG_FILE = "configuration.json";
     private static final String SCHEMA_SELECTION_FILE = "schema_selection.txt";
@@ -69,7 +69,7 @@ public final class SdkConnectorTester {
         String port;
 
         @CommandLine.Option(
-                names = {"--customer-sdk"},
+                names = {"--connector-sdk"},
                 description = "",
                 arity="1")
         Boolean customSdk = false;
@@ -151,7 +151,7 @@ public final class SdkConnectorTester {
     public void run(
             String workingDir,
             String destinationSchema,
-            boolean isCustomerSdk,
+            boolean isConnectorSdk,
             String grpcHost,
             int grpcPort) throws IOException{
         LOG.info("Version: " + VERSION);
@@ -159,7 +159,7 @@ public final class SdkConnectorTester {
         LOG.info("Destination schema: " + destinationSchema);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
-        if (isCustomerSdk) {
+        if (isConnectorSdk) {
             LOG.info("Customer SDK tester mode is enabled");
         }
 
@@ -186,7 +186,7 @@ public final class SdkConnectorTester {
             LOG.info("Configuration:\n" + strConfig);
             Map<String, String> creds = JSON.readValue(strConfig, new MapTypeReference());
 
-            if (!isCustomerSdk) {
+            if (!isConnectorSdk) {
                 LOG.info("Running setup tests");
                 for (ConfigurationTest connectorTest : configurationForm.getTestsList()) {
                     Optional<String> testResponse = client.test(connectorTest.getName(), creds);
@@ -204,7 +204,7 @@ public final class SdkConnectorTester {
 
             SchemaResponse schemaResponse = client.schema(creds, stateJson);
             Selection selection;
-            if (isCustomerSdk) {
+            if (isConnectorSdk) {
                 selection = createSelectionFromSchemaResponse(schemaResponse, destinationSchema);
             } else {
                 if (Files.exists(schemaSelectionsFilePath)) {
@@ -212,7 +212,7 @@ public final class SdkConnectorTester {
                 } else {
                     boolean schemaFileCreated =
                             createSchemaSelectionFile(schemaResponse, destinationSchema, schemaSelectionsFilePath);
-                    if (schemaFileCreated && !isCustomerSdk) {
+                    if (schemaFileCreated) {
                         LOG.info("Schema selection file is generated");
                         LOG.info("\nPlease update your schema selections and press RETURN to continue\n");
                         System.in.read();
@@ -245,7 +245,7 @@ public final class SdkConnectorTester {
         } catch (Throwable e) {
             LOG.log(Level.SEVERE, "Sync FAILED", e);
         } finally {
-            if (isCustomerSdk) {
+            if (isConnectorSdk) {
                 Files.deleteIfExists(configFilePath);
                 Files.deleteIfExists(schemaSelectionsFilePath);
             }
