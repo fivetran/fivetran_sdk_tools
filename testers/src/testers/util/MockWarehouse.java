@@ -353,6 +353,7 @@ public final class MockWarehouse implements AutoCloseable {
         else if (type.equals("blob")) return DataType.BINARY;
         else if (type.equals("date")) return DataType.NAIVE_DATE;
         else if (type.equals("timestamp")) return DataType.NAIVE_DATETIME;
+        else if (type.equals("time")) return DataType.NAIVE_TIME;
         else if (type.equals("timestamp with time zone")) return DataType.UTC_DATETIME;
 
         throw new RuntimeException("Unexpected type: " + type);
@@ -364,6 +365,7 @@ public final class MockWarehouse implements AutoCloseable {
         else if (dataType == DataType.NAIVE_DATE) return "DATE";
         else if (dataType == DataType.NAIVE_DATETIME) return "TIMESTAMP";
         else if (dataType == DataType.UTC_DATETIME) return "TIMESTAMPTZ";
+        else if (dataType == DataType.NAIVE_TIME) return "TIME";
         else return dataType.name();
     }
 

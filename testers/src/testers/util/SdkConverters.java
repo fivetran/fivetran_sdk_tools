@@ -38,6 +38,14 @@ public class SdkConverters {
         } else if (c == java.time.LocalDateTime.class) {
             Instant instant = ((LocalDateTime) raw).toInstant(ZoneOffset.UTC);
             return ValueType.newBuilder().setNaiveDatetime(instantToTimestamp(instant)).build();
+        } else if (c == java.time.LocalTime.class){
+            Instant instant = LocalDateTime.of(LocalDate.of(0,1,1),(LocalTime) raw).atZone(ZoneId.systemDefault()).toInstant();
+            return ValueType.newBuilder().setNaiveTime(instantToTimestamp(instant)).build();
+        } else if (c == java.sql.Time.class) {
+            Instant instant = LocalDateTime.of(LocalDate.of(0,1,1),((java.sql.Time) raw).toLocalTime())
+                    .atZone(ZoneId.systemDefault())
+                    .toInstant();
+            return ValueType.newBuilder().setNaiveTime(instantToTimestamp(instant)).build();
         } else if (c == java.sql.Timestamp.class) {
             Instant instant = ((java.sql.Timestamp) raw).toInstant();
             return ValueType.newBuilder().setNaiveDatetime(instantToTimestamp(instant)).build();
@@ -81,6 +89,8 @@ public class SdkConverters {
                 return DataType.NAIVE_DATE;
             case NAIVE_DATETIME:
                 return DataType.NAIVE_DATETIME;
+            case NAIVE_TIME:
+                return DataType.NAIVE_TIME;
             case UTC_DATETIME:
                 return DataType.UTC_DATETIME;
             case DECIMAL:
@@ -143,6 +153,13 @@ public class SdkConverters {
                     row.put(
                             column,
                             singleQuotes(naiveDateTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME).toString()));
+                    break;
+                case NAIVE_TIME:
+                    Timestamp tsTime = value.getNaiveTime();
+                    LocalTime naiveTime = Instant.ofEpochSecond(tsTime.getSeconds(), tsTime.getNanos())
+                            .atZone(ZoneId.systemDefault())
+                            .toLocalTime();
+                    row.put(column, singleQuotes(naiveTime.format(DateTimeFormatter.ISO_LOCAL_TIME).toString()));
                     break;
                 case UTC_DATETIME:
                     Timestamp tsInstant = value.getUtcDatetime();

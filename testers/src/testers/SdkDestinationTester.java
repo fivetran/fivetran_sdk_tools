@@ -522,6 +522,7 @@ public final class SdkDestinationTester {
             case NAIVE_DATE:
             case NAIVE_DATETIME:
             case UTC_DATETIME:
+            case NAIVE_TIME:
             case JSON:
             case UNSPECIFIED:
             case BINARY:

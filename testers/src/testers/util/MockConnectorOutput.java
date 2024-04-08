@@ -18,6 +18,7 @@ import javax.annotation.Nonnull;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.function.Consumer;
@@ -210,6 +211,7 @@ public final class MockConnectorOutput implements AutoCloseable {
             if (isInstant(value)) return DataType.UTC_DATETIME;
             if (isLocalDateTime(value)) return DataType.NAIVE_DATETIME;
             if (isLocalDate(value)) return DataType.NAIVE_DATE;
+            if (isLocalTime(value)) return DataType.NAIVE_TIME;
             if (isBoolean(value)) return DataType.BOOLEAN;
             if (isLong(value)) return DataType.LONG;
             if (isDouble(value)) return DataType.DOUBLE;
@@ -262,6 +264,15 @@ public final class MockConnectorOutput implements AutoCloseable {
             LocalDateTime.parse(value);
             return true;
         } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    private boolean isLocalTime(@Nonnull String value){
+        try{
+            LocalTime.parse(value);
+            return true;
+        } catch (DateTimeParseException e){
             return false;
         }
     }
