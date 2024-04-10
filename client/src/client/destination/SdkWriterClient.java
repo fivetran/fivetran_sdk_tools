@@ -85,14 +85,14 @@ public class SdkWriterClient {
 
     public Optional<String> createTable(String schema, Table table, Map<String, String> config) {
         DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
-        CreateTableRequest requestBuilder =
+        CreateTableRequest request =
                 CreateTableRequest.newBuilder()
                         .putAllConfiguration(config)
                         .setSchemaName(schema)
                         .setTable(table)
                         .build();
 
-        CreateTableResponse response = conn.createTable(requestBuilder);
+        CreateTableResponse response = conn.createTable(request);
         return response.hasFailure() ? Optional.of(response.getFailure()) : Optional.empty();
     }
 
