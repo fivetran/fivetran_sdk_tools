@@ -45,7 +45,7 @@ import picocli.CommandLine;
 public final class SdkDestinationTester {
     private static final Logger LOG = Logger.getLogger(SdkDestinationTester.class.getName());
 
-    private static final String VERSION = "024.0314.001";
+    private static final String VERSION = "024.0410.001";
 
     private static final CsvMapper CSV = createCsvMapper();
     private static final String DEFAULT_SCHEMA = "tester";
@@ -58,7 +58,7 @@ public final class SdkDestinationTester {
     private SdkDestinationTester() {}
 
     @CommandLine.Command(name = "cliargs", mixinStandardHelpOptions = true, description = "Command line args")
-    static class CliArgs {
+    public static class CliArgs {
         @CommandLine.Option(
                 names = {"--working-dir"},
                 required = true,
@@ -71,6 +71,12 @@ public final class SdkDestinationTester {
                 required = true,
                 description = "")
         String port;
+
+        @CommandLine.Option(
+                names = {"--schema-name"},
+                defaultValue = DEFAULT_SCHEMA,
+                description = "Use a custom schema name")
+        String schemaName;
 
         @CommandLine.Option(
                 names = {"--input-file"},
@@ -95,38 +101,32 @@ public final class SdkDestinationTester {
 
         String grpcWorkingDir = (System.getenv("WORKING_DIR") == null) ?
                 cliargs.workingDir : System.getenv("WORKING_DIR");
-
-        new SdkDestinationTester().run(
-                cliargs.workingDir,
-                grpcWorkingDir,
-                grpcHost,
-                Integer.parseInt(cliargs.port),
-                cliargs.plainText,
-                cliargs.inputFile);
+        int grpcPort = Integer.parseInt(cliargs.port);
+        new SdkDestinationTester().run(grpcWorkingDir, grpcHost, grpcPort, cliargs);
     }
 
-    public void run(
-            String workingDir, String grpcWorkingDir, String grpcHost, int grpcPort, boolean plainText, String inputFile) throws IOException {
+    public void run(String grpcWorkingDir, String grpcHost, int grpcPort, CliArgs cliargs) throws IOException {
         LOG.info("Version: " + VERSION);
         LOG.info("GRPC_HOSTNAME: " + grpcHost);
         LOG.info("GRPC_PORT: " + grpcPort);
         LOG.info("Working Directory: " + grpcWorkingDir);
-        if (!inputFile.isEmpty()) {
-            LOG.info("Input file: " + inputFile);
+        LOG.info("Schema name: " + cliargs.schemaName);
+        if (!cliargs.inputFile.isEmpty()) {
+            LOG.info("Input file: " + cliargs.inputFile);
         }
         LOG.info("NULL string: " + DEFAULT_NULL_STRING);
         LOG.info("UNMODIFIED string: " + DEFAULT_UPDATE_UNMODIFIED);
-        LOG.info("Compression: " + ((plainText) ? "NONE" : "ZSTD"));
-        LOG.info("Encryption: " + ((plainText) ? "NONE" : "AES/CBC"));
+        LOG.info("Compression: " + ((cliargs.plainText) ? "NONE" : "ZSTD"));
+        LOG.info("Encryption: " + ((cliargs.plainText) ? "NONE" : "AES/CBC"));
 
         ManagedChannel channel = SdkWriterClient.createChannel(grpcHost, grpcPort);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> SdkWriterClient.closeChannel(channel)));
         SdkWriterClient client = new SdkWriterClient(channel);
 
-        File directoryPath = new File(workingDir);
+        File directoryPath = new File(cliargs.workingDir);
         File[] filesList;
-        if (!inputFile.isEmpty()) {
-            filesList = new File[]{ Paths.get(workingDir, inputFile).toFile() };
+        if (!cliargs.inputFile.isEmpty()) {
+            filesList = new File[]{ Paths.get(cliargs.workingDir, cliargs.inputFile).toFile() };
         } else {
             filesList = directoryPath.listFiles();
             if (filesList == null) {
@@ -136,7 +136,7 @@ public final class SdkDestinationTester {
         }
 
         LOG.info("Fetching configuration form");
-        Path configFilePath = Paths.get(workingDir, CONFIG_FILE);
+        Path configFilePath = Paths.get(cliargs.workingDir, CONFIG_FILE);
         ConfigurationFormResponse configurationForm = client.configurationForm();
         SdkConnectorTester.saveConfig(configurationForm, configFilePath);
 
@@ -161,7 +161,8 @@ public final class SdkDestinationTester {
             if (file.isFile() && !file.getName().equals(CONFIG_FILE) && file.getName().endsWith(".json")) {
                 LinkedHashMap<String, Object> batch = mapper.readValue(file, new TypeReference<>() {});
                 String filename = file.getName().replaceFirst("[.][^.]+$", "");
-                executeInputFile(filename, batch, client, workingDir, grpcWorkingDir, creds, plainText);
+                executeInputFile(
+                        cliargs.schemaName, filename, batch, client, cliargs.workingDir, grpcWorkingDir, creds, cliargs.plainText);
             }
         }
 
@@ -170,6 +171,7 @@ public final class SdkDestinationTester {
 
     /** Executes the elements of the input file in the same order as Fivetran core */
     private void executeInputFile(
+            String schemaName,
             String batchName,
             Map<String, Object> batch,
             SdkWriterClient client,
@@ -191,7 +193,7 @@ public final class SdkDestinationTester {
             }
 
             for (String tableName : (List<String>) entry) {
-                DescribeTableResponse response = client.describeTable(DEFAULT_SCHEMA, tableName, config);
+                DescribeTableResponse response = client.describeTable(schemaName, tableName, config);
 
                 if (response.hasFailure()) {
                     throw new RuntimeException(
@@ -225,7 +227,7 @@ public final class SdkDestinationTester {
 
                 Table table = buildTable(tableName, (Map<String, Object>) tableEntry.getValue());
 
-                Optional<String> result = client.createTable(DEFAULT_SCHEMA, table, config);
+                Optional<String> result = client.createTable(schemaName, table, config);
                 if (result.isPresent()) {
                     throw new RuntimeException(result.get());
                 } else {
@@ -247,7 +249,7 @@ public final class SdkDestinationTester {
 
                 Table table = buildTable(tableName, (Map<String, Object>) tableEntry.getValue());
 
-                Optional<String> result = client.alterTable(DEFAULT_SCHEMA, table, config);
+                Optional<String> result = client.alterTable(schemaName, table, config);
                 if (result.isPresent()) {
                     throw new RuntimeException(result.get());
                 } else {
@@ -265,6 +267,7 @@ public final class SdkDestinationTester {
         if (batch.containsKey("ops")) {
             separateOpsToTables(
                     client,
+                    schemaName,
                     config,
                     tables,
                     (List<Map<String, Object>>) batch.get("ops"),
@@ -310,7 +313,7 @@ public final class SdkDestinationTester {
                 // Send batch files first
                 client.writeBatch(
                         config,
-                        DEFAULT_SCHEMA,
+                        schemaName,
                         table,
                         columns,
                         replaceList,
@@ -327,7 +330,7 @@ public final class SdkDestinationTester {
                     Instant ts = softTruncateBefores.get(table);
                     LOG.info(String.format("Truncating: %s [%s]", table, ts.toString()));
                     client.truncate(
-                            DEFAULT_SCHEMA,
+                            schemaName,
                             table,
                             DELETED_SYS_COLUMN,
                             SYNCED_SYS_COLUMN,
@@ -342,7 +345,7 @@ public final class SdkDestinationTester {
                     Instant ts = hardTruncateBefores.get(table);
                     LOG.info(String.format("Hard Truncating: %s [%s]", table, ts.toString()));
                     client.truncate(
-                            DEFAULT_SCHEMA,
+                            schemaName,
                             table,
                             DELETED_SYS_COLUMN,
                             SYNCED_SYS_COLUMN,
@@ -550,6 +553,7 @@ public final class SdkDestinationTester {
 
     private void separateOpsToTables(
             SdkWriterClient client,
+            String schemaName,
             Map<String, String> config,
             Map<String, Table> tables,
             List<Map<String, Object>> ops,
@@ -594,7 +598,7 @@ public final class SdkDestinationTester {
                                 Table newTable = addDeletedSysColumn(tables.get(table));
                                 tables.put(table, newTable);
 
-                                client.alterTable(DEFAULT_SCHEMA, newTable, config);
+                                client.alterTable(schemaName, newTable, config);
                             }
                         }
 
@@ -627,7 +631,7 @@ public final class SdkDestinationTester {
                         Table newTable = addDeletedSysColumn(tables.get(table));
                         tables.put(table, newTable);
 
-                        client.alterTable(DEFAULT_SCHEMA, newTable, config);
+                        client.alterTable(schemaName, newTable, config);
                     }
                 }
             } else if (opName.equalsIgnoreCase("truncate_before")) {
