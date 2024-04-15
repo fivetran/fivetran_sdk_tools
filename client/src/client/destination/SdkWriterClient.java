@@ -6,27 +6,7 @@ import static client.connector.SdkConnectorClient.waitForServer;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 
-import fivetran_sdk.AlterTableRequest;
-import fivetran_sdk.AlterTableResponse;
-import fivetran_sdk.Column;
-import fivetran_sdk.Compression;
-import fivetran_sdk.ConfigurationFormRequest;
-import fivetran_sdk.ConfigurationFormResponse;
-import fivetran_sdk.CreateTableRequest;
-import fivetran_sdk.CreateTableResponse;
-import fivetran_sdk.CsvFileParams;
-import fivetran_sdk.DescribeTableRequest;
-import fivetran_sdk.DescribeTableResponse;
-import fivetran_sdk.DestinationGrpc;
-import fivetran_sdk.Encryption;
-import fivetran_sdk.SoftTruncate;
-import fivetran_sdk.Table;
-import fivetran_sdk.TestRequest;
-import fivetran_sdk.TestResponse;
-import fivetran_sdk.TruncateRequest;
-import fivetran_sdk.TruncateResponse;
-import fivetran_sdk.WriteBatchRequest;
-import fivetran_sdk.WriteBatchResponse;
+import fivetran_sdk.*;
 
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -43,7 +23,7 @@ public class SdkWriterClient {
     private static final Duration WRITE_BATCH_TIMEOUT = Duration.of(1, ChronoUnit.HOURS);
 
     private final ManagedChannel channel;
-    private DestinationGrpc.DestinationBlockingStub blockingStub = null;
+    private DestinationConnectorGrpc.DestinationConnectorBlockingStub blockingStub = null;
 
     public SdkWriterClient(ManagedChannel channel) {
         this.channel = channel;
@@ -54,13 +34,13 @@ public class SdkWriterClient {
     }
 
     public ConfigurationFormResponse configurationForm() {
-        DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
         ConfigurationFormRequest configFormRequest = ConfigurationFormRequest.newBuilder().build();
         return conn.configurationForm(configFormRequest);
     }
 
     public Optional<String> test(String testName, Map<String, String> config) {
-        DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
         TestRequest request = TestRequest.newBuilder().setName(testName).putAllConfiguration(config).build();
 
         TestResponse response = conn.test(request);
@@ -77,14 +57,14 @@ public class SdkWriterClient {
     }
 
     public DescribeTableResponse describeTable(String schema, String table, Map<String, String> config) {
-        DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
         DescribeTableRequest.Builder requestBuilder =
                 DescribeTableRequest.newBuilder().putAllConfiguration(config).setSchemaName(schema).setTableName(table);
         return conn.describeTable(requestBuilder.build());
     }
 
     public Optional<String> createTable(String schema, Table table, Map<String, String> config) {
-        DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
         CreateTableRequest request =
                 CreateTableRequest.newBuilder()
                         .putAllConfiguration(config)
@@ -97,13 +77,13 @@ public class SdkWriterClient {
     }
 
     public Optional<String> alterTable(String schema, Table table, Map<String, String> config) {
-        DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
 
         AlterTableRequest request =
                 AlterTableRequest.newBuilder()
                         .putAllConfiguration(config)
                         .setSchemaName(schema)
-                        .setTable(table)
+                        .setTableName(table.getName())
                         .build();
 
         AlterTableResponse response = conn.alterTable(request);
@@ -118,7 +98,7 @@ public class SdkWriterClient {
             Instant deleteBefore,
             boolean soft,
             Map<String, String> config) {
-        DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
 
         TruncateRequest.Builder requestBuilder =
                 TruncateRequest.newBuilder()
@@ -151,7 +131,7 @@ public class SdkWriterClient {
             String fileFormat,
             String nullString,
             String unmodifiedString) {
-        DestinationGrpc.DestinationBlockingStub conn = getBlockingStub();
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
 
         Table table = Table.newBuilder().setName(tableName).addAllColumns(columns).build();
 
@@ -186,10 +166,10 @@ public class SdkWriterClient {
                 .writeBatch(requestBuilder.build());
     }
 
-    private DestinationGrpc.DestinationBlockingStub getBlockingStub() {
+    private DestinationConnectorGrpc.DestinationConnectorBlockingStub getBlockingStub() {
         if (blockingStub == null) {
             waitForServer(channel);
-            blockingStub = DestinationGrpc.newBlockingStub(channel)
+            blockingStub = DestinationConnectorGrpc.newBlockingStub(channel)
                     .withCompression("gzip")
                     .withWaitForReady();
         }
