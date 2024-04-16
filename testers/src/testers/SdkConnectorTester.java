@@ -237,7 +237,7 @@ public final class SdkConnectorTester {
                 LOG.info("This connector does not support schema discovery");
             }
 
-            client.update(creds, stateJson, selection, output::enqueueOperation, System.out::println);
+            client.update(creds, stateJson, selection, output::enqueueOperation);
 
             output.displayReport();
             LOG.info("Sync SUCCEEDED");
@@ -507,73 +507,30 @@ public final class SdkConnectorTester {
                         };
                 Scanner scanner = new Scanner(inputStream)) {
             Map<String, String> config = new HashMap<>();
-            for (FormField field : configurationForm.getFieldsList()) {
+            Deque<FormField> deque = new ArrayDeque<>();
+            addFormFieldsToDeque(deque, configurationForm.getFieldsList());
+            while (!deque.isEmpty()) {
+                FormField formField = deque.pop();
                 System.out.println();
-                String description = field.getDescription();
-                switch (field.getTypeCase()) {
-                    case TEXT_FIELD:
-                        TextField textField = field.getTextField();
-                        String strText =
-                                String.format(
-                                        "<%s [%s] [%s] %s>",
-                                        field.getName(),
-                                        textField.name(),
-                                        description,
-                                        field.getRequired() ? "required" : "");
-                        System.out.println(strText);
-                        System.out.print(field.getLabel() + ": ");
-                        String inputFieldVal = scanner.nextLine();
-                        config.put(field.getName(), inputFieldVal);
-                        break;
-
-                    case DROPDOWN_FIELD:
-                        DropdownField dropdownField = field.getDropdownField();
-                        List<String> items =
-                                dropdownField
-                                        .getDropdownFieldList()
-                                        .asByteStringList()
-                                        .stream()
-                                        .map(ByteString::toStringUtf8)
-                                        .collect(Collectors.toList());
-                        StringJoiner itemsJoiner = new StringJoiner(",");
-                        items.forEach(i -> itemsJoiner.add(i));
-                        String strDropdown =
-                                String.format(
-                                        "<%s [%s] [%s] [%s] %s>",
-                                        field.getName(),
-                                        field.getTypeCase(),
-                                        description,
-                                        itemsJoiner,
-                                        field.getRequired() ? "required" : "");
-                        System.out.println(strDropdown);
-                        System.out.print(field.getLabel() + ": ");
-                        String selectFieldVal = scanner.nextLine();
-                        if (!items.contains(selectFieldVal)) {
-                            throw new RuntimeException("Invalid value: " + selectFieldVal);
+                if (formField.hasSingle()) {
+                    Field field = formField.getSingle();
+                    displayFields(field, scanner, config);
+                } else {
+                    // If the field is FieldSet
+                    FieldSet fieldSet = formField.getFieldSet();
+                    VisibilityCondition condition = fieldSet.getCondition();
+                    if(condition.hasHasBoolValue()){
+                        if(condition.getHasBoolValue()){
+                            addFormFieldsToDeque(deque, fieldSet.getFieldsList());
                         }
-                        config.put(field.getName(), selectFieldVal);
-                        break;
-
-                    case TOGGLE_FIELD:
-                        ToggleField toggleField = field.getToggleField();
-                        String strToggle =
-                                String.format(
-                                        "<%s [%s] [true, false] [%s] %s>",
-                                        field.getName(),
-                                        field.getTypeCase(),
-                                        description,
-                                        field.getRequired() ? "required" : "");
-                        System.out.println(strToggle);
-                        System.out.print(field.getLabel() + ": ");
-                        String toggleFieldVal = scanner.nextLine().toLowerCase();
-                        if (!toggleFieldVal.equals("true") && !toggleFieldVal.equals("false")) {
-                            throw new RuntimeException("Invalid value: " + toggleField);
+                    } else {
+                        String expectedFieldValue = condition.getHasStringValue();
+                        String providedFieldValue = config.getOrDefault(condition.getFieldName(),null);
+                        if(expectedFieldValue.equalsIgnoreCase(providedFieldValue)){
+                            addFormFieldsToDeque(deque, fieldSet.getFieldsList());
                         }
-                        config.put(field.getName(), toggleFieldVal);
-                        break;
+                    }
 
-                    default:
-                        throw new RuntimeException("Unsupported form field type: " + field.getTypeCase().name());
                 }
             }
 
@@ -581,6 +538,82 @@ public final class SdkConnectorTester {
 
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private static void displayFields(Field field, Scanner scanner, Map<String, String> config){
+        String description = field.getDescription();
+        switch (field.getTypeCase()) {
+            case TEXT_FIELD:
+                TextField textField = field.getTextField();
+                String strText =
+                        String.format(
+                                "<%s [%s] [%s] %s>",
+                                field.getName(),
+                                textField.name(),
+                                description,
+                                field.getRequired() ? "required" : "");
+                System.out.println(strText);
+                System.out.print(field.getLabel() + ": ");
+                String inputFieldVal = scanner.nextLine();
+                config.put(field.getName(), inputFieldVal);
+                break;
+
+            case DROPDOWN_FIELD:
+                DropdownField dropdownField = field.getDropdownField();
+                List<String> items =
+                        dropdownField
+                                .getDropdownFieldList()
+                                .asByteStringList()
+                                .stream()
+                                .map(ByteString::toStringUtf8)
+                                .collect(Collectors.toList());
+                StringJoiner itemsJoiner = new StringJoiner(",");
+                items.forEach(i -> itemsJoiner.add(i));
+                String strDropdown =
+                        String.format(
+                                "<%s [%s] [%s] [%s] %s>",
+                                field.getName(),
+                                field.getTypeCase(),
+                                description,
+                                itemsJoiner,
+                                field.getRequired() ? "required" : "");
+                System.out.println(strDropdown);
+                System.out.print(field.getLabel() + ": ");
+                String selectFieldVal = scanner.nextLine();
+                if (!items.contains(selectFieldVal)) {
+                    throw new RuntimeException("Invalid value: " + selectFieldVal);
+                }
+                config.put(field.getName(), selectFieldVal);
+                break;
+
+            case TOGGLE_FIELD:
+                ToggleField toggleField = field.getToggleField();
+                String strToggle =
+                        String.format(
+                                "<%s [%s] [true, false] [%s] %s>",
+                                field.getName(),
+                                field.getTypeCase(),
+                                description,
+                                field.getRequired() ? "required" : "");
+                System.out.println(strToggle);
+                System.out.print(field.getLabel() + ": ");
+                String toggleFieldVal = scanner.nextLine().toLowerCase();
+                if (!toggleFieldVal.equals("true") && !toggleFieldVal.equals("false")) {
+                    throw new RuntimeException("Invalid value: " + toggleField);
+                }
+                config.put(field.getName(), toggleFieldVal);
+                break;
+
+            default:
+                throw new RuntimeException("Unsupported form field type: " + field.getTypeCase().name());
+        }
+    }
+
+    private static void addFormFieldsToDeque(Deque<FormField> deque, List<FormField> formFieldList){
+        int totalFormFields = formFieldList.size();
+        for(int i = totalFormFields-1;i>=0;i--){
+            deque.push(formFieldList.get(i));
         }
     }
 

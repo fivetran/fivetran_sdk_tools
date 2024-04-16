@@ -5,12 +5,8 @@ import static testers.util.MockConnectorOutputSpec.createRecord;
 import static testers.util.MockWarehouseSpec.generateRandomName;
 import static org.junit.Assert.assertEquals;
 
-import fivetran_sdk.Column;
-import fivetran_sdk.DataType;
-import fivetran_sdk.OpType;
-import fivetran_sdk.Operation;
-import fivetran_sdk.Table;
-import fivetran_sdk.ValueType;
+import fivetran_sdk.*;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,17 +58,17 @@ public class MockConnectorOutputIntegrationSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", objectToValueType(100));
         row.put("val", objectToValueType("Some string"));
-        Operation upsert =
-                Operation.newBuilder()
-                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), OpType.UPSERT, row))
+        UpdateResponse upsert =
+                UpdateResponse.newBuilder()
+                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), RecordType.UPSERT, row))
                         .build();
         out1.enqueueOperation(upsert);
 
         out2.handleSchemaChange(SCHEMA_NAME, table);
         row.put("val", objectToValueType("Some new string"));
-        Operation update =
-                Operation.newBuilder()
-                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), OpType.UPDATE, row))
+        UpdateResponse update =
+                UpdateResponse.newBuilder()
+                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), RecordType.UPDATE, row))
                         .build();
         out2.enqueueOperation(update);
 

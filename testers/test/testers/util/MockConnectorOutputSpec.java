@@ -6,16 +6,11 @@ import static testers.util.SdkConverters.objectToValueType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 
-import fivetran_sdk.Column;
-import fivetran_sdk.DataType;
-import fivetran_sdk.OpType;
-import fivetran_sdk.Operation;
-import fivetran_sdk.Record;
-import fivetran_sdk.Table;
-import fivetran_sdk.ValueType;
+import fivetran_sdk.*;
 
 import java.util.*;
 
+import fivetran_sdk.Record;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -35,8 +30,8 @@ public class MockConnectorOutputSpec {
         connectorOutput = new MockConnectorOutput(destination, "defaultSchema", (s) -> {}, () -> "{}");
     }
 
-    static Record createRecord(String schema, String table, OpType opType, Map<String, ValueType> data) {
-        return Record.newBuilder().setSchemaName(schema).setTableName(table).setType(opType).putAllData(data).build();
+    static Record createRecord(String schema, String table, RecordType recordType, Map<String, ValueType> data) {
+        return Record.newBuilder().setSchemaName(schema).setTableName(table).setType(recordType).putAllData(data).build();
     }
 
     @Test
@@ -150,9 +145,9 @@ public class MockConnectorOutputSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", objectToValueType(100));
         row.put("dbl", objectToValueType(1.234d));
-        Operation upsert =
-                Operation.newBuilder()
-                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), OpType.UPSERT, row))
+        UpdateResponse upsert =
+                UpdateResponse.newBuilder()
+                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), RecordType.UPSERT, row))
                         .build();
         connectorOutput.enqueueOperation(upsert);
 
@@ -186,9 +181,9 @@ public class MockConnectorOutputSpec {
         Map<String, ValueType> row = new HashMap<>();
         row.put("id1", objectToValueType(100));
         row.put("dbl", objectToValueType(SYS_CLOCK.instant()));
-        Operation upsert =
-                Operation.newBuilder()
-                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), OpType.UPSERT, row))
+        UpdateResponse upsert =
+                UpdateResponse.newBuilder()
+                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), RecordType.UPSERT, row))
                         .build();
         connectorOutput.enqueueOperation(upsert);
 
@@ -219,9 +214,9 @@ public class MockConnectorOutputSpec {
         row.put("id1", objectToValueType(100));
         row.put("dbl", objectToValueType(123.46d));
         row.put("new_col", objectToValueType(true));
-        Operation upsert =
-                Operation.newBuilder()
-                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), OpType.UPSERT, row))
+        UpdateResponse upsert =
+                UpdateResponse.newBuilder()
+                        .setRecord(createRecord(SCHEMA_NAME, table.getName(), RecordType.UPSERT, row))
                         .build();
         connectorOutput.enqueueOperation(upsert);
 

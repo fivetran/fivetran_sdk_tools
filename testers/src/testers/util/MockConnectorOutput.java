@@ -3,16 +3,9 @@ package testers.util;
 import static testers.util.SdkConverters.valueTypeToDataType;
 
 import com.google.common.annotations.VisibleForTesting;
-import fivetran_sdk.Checkpoint;
-import fivetran_sdk.Column;
-import fivetran_sdk.DataType;
-import fivetran_sdk.OpType;
-import fivetran_sdk.Operation;
+import fivetran_sdk.*;
+import fivetran_sdk.RecordType;
 import fivetran_sdk.Record;
-import fivetran_sdk.Schema;
-import fivetran_sdk.SchemaChange;
-import fivetran_sdk.Table;
-import fivetran_sdk.ValueType;
 
 import javax.annotation.Nonnull;
 import java.time.Instant;
@@ -31,7 +24,7 @@ import java.util.stream.Collectors;
 public final class MockConnectorOutput implements AutoCloseable {
     private static final Logger LOG = Logger.getLogger(MockConnectorOutput.class.getName());
 
-    private final Map<OpType, Consumer<Record>> recordMapper = new EnumMap<>(OpType.class);
+    private final Map<RecordType, Consumer<Record>> recordMapper = new EnumMap<>(RecordType.class);
 
     private final MockWarehouse destination;
     private final String defaultSchema;
@@ -62,14 +55,14 @@ public final class MockConnectorOutput implements AutoCloseable {
         this.stateSaver = stateSaver;
         this.stateLoader = stateLoader;
 
-        recordMapper.put(OpType.UPSERT, this::handleUpsert);
-        recordMapper.put(OpType.UPDATE, this::handleUpdate);
-        recordMapper.put(OpType.DELETE, this::handleDelete);
-        recordMapper.put(OpType.TRUNCATE, this::handleTruncate);
+        recordMapper.put(RecordType.UPSERT, this::handleUpsert);
+        recordMapper.put(RecordType.UPDATE, this::handleUpdate);
+        recordMapper.put(RecordType.DELETE, this::handleDelete);
+        recordMapper.put(RecordType.TRUNCATE, this::handleTruncate);
     }
 
-    public void enqueueOperation(Operation op) {
-        Operation.OpCase opCase = op.getOpCase();
+    public void enqueueOperation(UpdateResponse op) {
+        UpdateResponse.OperationCase opCase = op.getOperationCase();
         switch (opCase) {
             case RECORD:
                 Record record = op.getRecord();

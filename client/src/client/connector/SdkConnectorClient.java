@@ -1,7 +1,6 @@
 package client.connector;
 
 import fivetran_sdk.*;
-import fivetran_sdk.Operation;
 import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -28,10 +27,7 @@ public class SdkConnectorClient {
     }
 
     @FunctionalInterface
-    public interface OperationConsumer extends Consumer<Operation> {}
-
-    @FunctionalInterface
-    public interface LogEntryConsumer extends Consumer<LogEntry> {}
+    public interface OperationConsumer extends Consumer<UpdateResponse> {}
 
     public SchemaResponse schema(Map<String, String> config, String stateJson) {
         ConnectorGrpc.ConnectorBlockingStub conn = getBlockingStub();
@@ -66,8 +62,7 @@ public class SdkConnectorClient {
             Map<String, String> config,
             String stateJson,
             Selection selection,
-            OperationConsumer operationConsumer,
-            LogEntryConsumer logEntryConsumer) {
+            OperationConsumer operationConsumer) {
         ConnectorGrpc.ConnectorBlockingStub conn = getBlockingStub();
 
         UpdateRequest.Builder requestBuilder =
@@ -77,13 +72,7 @@ public class SdkConnectorClient {
         Iterator<UpdateResponse> it = conn.update(request);
         while (it.hasNext()) {
             UpdateResponse response = it.next();
-
-            if (response.hasLogEntry()) {
-                logEntryConsumer.accept(response.getLogEntry());
-
-            } else if (response.hasOperation()) {
-                operationConsumer.accept(response.getOperation());
-            }
+            operationConsumer.accept(response);
         }
     }
 
