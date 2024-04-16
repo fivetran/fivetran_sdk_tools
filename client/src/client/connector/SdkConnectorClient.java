@@ -20,7 +20,7 @@ public class SdkConnectorClient {
     public static final int MAX_MESSAGE_SIZE = 32 * 1024 * 1024;
 
     private final ManagedChannel channel;
-    private ConnectorGrpc.ConnectorBlockingStub blockingStub = null;
+    private SourceConnectorGrpc.SourceConnectorBlockingStub blockingStub = null;
 
     public SdkConnectorClient(ManagedChannel channel) {
         this.channel = channel;
@@ -30,19 +30,19 @@ public class SdkConnectorClient {
     public interface OperationConsumer extends Consumer<UpdateResponse> {}
 
     public SchemaResponse schema(Map<String, String> config, String stateJson) {
-        ConnectorGrpc.ConnectorBlockingStub conn = getBlockingStub();
+        SourceConnectorGrpc.SourceConnectorBlockingStub conn = getBlockingStub();
         SchemaRequest request = SchemaRequest.newBuilder().putAllConfiguration(config).build();
         return conn.schema(request);
     }
 
     public ConfigurationFormResponse configurationForm() {
-        ConnectorGrpc.ConnectorBlockingStub conn = getBlockingStub();
+        SourceConnectorGrpc.SourceConnectorBlockingStub conn = getBlockingStub();
         ConfigurationFormRequest configFormRequest = ConfigurationFormRequest.newBuilder().build();
         return conn.configurationForm(configFormRequest);
     }
 
     public Optional<String> test(String testName, Map<String, String> config) {
-        ConnectorGrpc.ConnectorBlockingStub conn = getBlockingStub();
+        SourceConnectorGrpc.SourceConnectorBlockingStub conn = getBlockingStub();
         TestRequest request = TestRequest.newBuilder().setName(testName).putAllConfiguration(config).build();
 
         TestResponse response = conn.test(request);
@@ -63,7 +63,7 @@ public class SdkConnectorClient {
             String stateJson,
             Selection selection,
             OperationConsumer operationConsumer) {
-        ConnectorGrpc.ConnectorBlockingStub conn = getBlockingStub();
+        SourceConnectorGrpc.SourceConnectorBlockingStub conn = getBlockingStub();
 
         UpdateRequest.Builder requestBuilder =
                 UpdateRequest.newBuilder().setStateJson(stateJson).setSelection(selection).putAllConfiguration(config);
@@ -102,10 +102,10 @@ public class SdkConnectorClient {
         return true;
     }
 
-    private ConnectorGrpc.ConnectorBlockingStub getBlockingStub() {
+    private SourceConnectorGrpc.SourceConnectorBlockingStub getBlockingStub() {
         if (blockingStub == null) {
             waitForServer(channel);
-            blockingStub = ConnectorGrpc.newBlockingStub(channel).withCompression("gzip");
+            blockingStub = SourceConnectorGrpc.newBlockingStub(channel).withCompression("gzip");
         }
         return blockingStub;
     }
