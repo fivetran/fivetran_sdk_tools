@@ -39,6 +39,12 @@ public class SdkWriterClient {
         return conn.configurationForm(configFormRequest);
     }
 
+    public CapabilitiesResponse capabilities() {
+        DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
+        CapabilitiesRequest capabilitiesRequest = CapabilitiesRequest.newBuilder().build();
+        return conn.capabilities(capabilitiesRequest);
+    }
+
     public Optional<String> test(String testName, Map<String, String> config) {
         DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
         TestRequest request = TestRequest.newBuilder().setName(testName).putAllConfiguration(config).build();
@@ -76,7 +82,7 @@ public class SdkWriterClient {
         return response.hasFailure() ? Optional.of(response.getFailure()) : Optional.empty();
     }
 
-    public Optional<String> alterTable(String schema, Table table, Map<String, String> config) {
+    public Optional<String> alterTable(String schema, Table table, List<SchemaDiff> schemaDiffs, Map<String, String> config) {
         DestinationConnectorGrpc.DestinationConnectorBlockingStub conn = getBlockingStub();
 
         AlterTableRequest request =
@@ -84,6 +90,7 @@ public class SdkWriterClient {
                         .putAllConfiguration(config)
                         .setSchemaName(schema)
                         .setTableName(table.getName())
+                        .addAllChanges(schemaDiffs)
                         .build();
 
         AlterTableResponse response = conn.alterTable(request);

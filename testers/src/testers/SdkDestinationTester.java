@@ -249,7 +249,8 @@ public final class SdkDestinationTester {
 
                 Table table = buildTable(tableName, (Map<String, Object>) tableEntry.getValue());
 
-                Optional<String> result = client.alterTable(schemaName, table, config);
+                List<SchemaDiff> schemaDiffs = createSchemaDiffs((Map<String, Object>) tableEntry.getValue());
+                Optional<String> result = client.alterTable(schemaName, table, schemaDiffs, config);
                 if (result.isPresent()) {
                     throw new RuntimeException(result.get());
                 } else {
@@ -464,40 +465,9 @@ public final class SdkDestinationTester {
         for (var columnEntry : ((Map<String, Object>) tableEntry.get("columns")).entrySet()) {
             String columnName = columnEntry.getKey();
 
-            if (columnName.equals(DELETED_SYS_COLUMN) ||
-                    columnName.equals(SYNCED_SYS_COLUMN) ||
-                    columnName.equals(ID_SYS_COLUMN)) {
-                throw new RuntimeException(String.format("%s is a Fivetran system column name", columnName));
-            }
+            checkAndThrowIfSystemColumns(columnName);
 
-            Column.Builder columnBuilder = Column.newBuilder().setName(columnName);
-            Object dataType = columnEntry.getValue();
-
-            if (dataType instanceof String dataTypeStr) {
-                columnBuilder.setType(strToDataType(dataTypeStr.toUpperCase()));
-            } else if (dataType instanceof Map) {
-                // Currently this is only for DECIMAL data type
-                Map<String, Object> dataTypeMap = (Map<String, Object>) dataType;
-                String strDataType = ((String) dataTypeMap.get("type")).toUpperCase();
-                if (!strDataType.equals("DECIMAL")) {
-                    throw new RuntimeException("Expecting DECIMAL data type");
-                }
-                int precision = (int) dataTypeMap.get("precision");
-                int scale = (int) dataTypeMap.get("scale");
-                columnBuilder
-                        .setType(DataType.DECIMAL)
-                        .setDecimal(DecimalParams.newBuilder()
-                        .setPrecision(precision)
-                        .setScale(scale)
-                        .build());
-            } else {
-                throw new RuntimeException("Unexpected data type object");
-            }
-
-            if (pkeys.contains(columnName)) {
-                columnBuilder.setPrimaryKey(true);
-            }
-
+            Column.Builder columnBuilder = buildColumn(columnEntry, pkeys);
             columns.add(columnBuilder.build());
         }
 
@@ -515,6 +485,38 @@ public final class SdkDestinationTester {
         }
 
         return tableBuilder.addAllColumns(columns).build();
+    }
+
+    private Column.Builder buildColumn(Map.Entry<String, Object> columnEntry, List<String> pkeys) {
+        String columnName = columnEntry.getKey();
+        Column.Builder columnBuilder = Column.newBuilder().setName(columnName);
+        Object dataType = columnEntry.getValue();
+
+        if (dataType instanceof String dataTypeStr) {
+            columnBuilder.setType(strToDataType(dataTypeStr.toUpperCase()));
+        } else if (dataType instanceof Map) {
+            // Currently this is only for DECIMAL data type
+            Map<String, Object> dataTypeMap = (Map<String, Object>) dataType;
+            String strDataType = ((String) dataTypeMap.get("type")).toUpperCase();
+            if (!strDataType.equals("DECIMAL")) {
+                throw new RuntimeException("Expecting DECIMAL data type");
+            }
+            int precision = (int) dataTypeMap.get("precision");
+            int scale = (int) dataTypeMap.get("scale");
+            columnBuilder
+                    .setType(DataType.DECIMAL)
+                    .setDecimal(DecimalParams.newBuilder()
+                            .setPrecision(precision)
+                            .setScale(scale)
+                            .build());
+        } else {
+            throw new RuntimeException("Unexpected data type object");
+        }
+
+        if (pkeys.contains(columnName)) {
+            columnBuilder.setPrimaryKey(true);
+        }
+        return columnBuilder;
     }
 
     private CsvSchema.ColumnType csvType(DataType type) {
@@ -548,6 +550,47 @@ public final class SdkDestinationTester {
             return DataType.valueOf(type);
         } catch (Exception e) {
             throw new RuntimeException("Unsupported data type: " + type);
+        }
+    }
+
+    private List<SchemaDiff> createSchemaDiffs(Map<String, Object> value) {
+
+        List<SchemaDiff> schemaDiffs = new ArrayList<>();
+
+        // add new primary key
+        List<String> pkeys = (List<String>) value.get("primary_key");
+        for(var pkey : pkeys) {
+            schemaDiffs.add(SchemaDiff.newBuilder().setNewPrimaryKey(PrimaryKey.newBuilder().addColumnName(pkey)).build());
+        }
+
+        // add new column
+        for (var columnEntry : ((Map<String, Object>) value.get("columns")).entrySet()) {
+            String columnName = columnEntry.getKey();
+            checkAndThrowIfSystemColumns(columnName);
+
+            Column.Builder columnBuilder = buildColumn(columnEntry, pkeys);
+
+            schemaDiffs.add(SchemaDiff.newBuilder().setAddColumn(columnBuilder.build()).build());
+        }
+
+        // change type of column
+        List<Map<String, Object>> changedTypes = (List<Map<String, Object>>) value.get("change_type");
+        for(var types : changedTypes) {
+            for (var columnEntry : types.entrySet()) {
+                String columnName = columnEntry.getKey();
+                checkAndThrowIfSystemColumns(columnName);
+                String dataType = (String)columnEntry.getValue();
+                schemaDiffs.add(SchemaDiff.newBuilder().setChangeColumnType(ChangeType.newBuilder().setColumnName(columnName).setNewType(strToDataType(dataType)).build()).build());
+            }
+        }
+        return schemaDiffs;
+    }
+
+    private void checkAndThrowIfSystemColumns(String columnName) {
+        if (columnName.equals(DELETED_SYS_COLUMN) ||
+                columnName.equals(SYNCED_SYS_COLUMN) ||
+                columnName.equals(ID_SYS_COLUMN)) {
+            throw new RuntimeException(String.format("%s is a Fivetran system column name", columnName));
         }
     }
 
@@ -598,7 +641,8 @@ public final class SdkDestinationTester {
                                 Table newTable = addDeletedSysColumn(tables.get(table));
                                 tables.put(table, newTable);
 
-                                client.alterTable(schemaName, newTable, config);
+                                SchemaDiff schemaDiff = SchemaDiff.newBuilder().setAddColumn(Column.newBuilder().setName(DELETED_SYS_COLUMN).setType(DataType.BOOLEAN)).build();
+                                client.alterTable(schemaName, newTable, List.of(schemaDiff), config);
                             }
                         }
 
@@ -631,7 +675,8 @@ public final class SdkDestinationTester {
                         Table newTable = addDeletedSysColumn(tables.get(table));
                         tables.put(table, newTable);
 
-                        client.alterTable(schemaName, newTable, config);
+                        SchemaDiff schemaDiff = SchemaDiff.newBuilder().setAddColumn(Column.newBuilder().setName(DELETED_SYS_COLUMN).setType(DataType.BOOLEAN)).build();
+                        client.alterTable(schemaName, newTable, List.of(schemaDiff), config);
                     }
                 }
             } else if (opName.equalsIgnoreCase("truncate_before")) {
