@@ -514,7 +514,7 @@ public final class SdkConnectorTester {
                 System.out.println();
                 if (formField.hasSingle()) {
                     Field field = formField.getSingle();
-                    displayFields(field, scanner, config);
+                    displayField(field, scanner, config);
                 } else {
                     // If the field is FieldSet
                     FieldSet fieldSet = formField.getFieldSet();
@@ -530,7 +530,6 @@ public final class SdkConnectorTester {
                             addFormFieldsToDeque(deque, fieldSet.getFieldsList());
                         }
                     }
-
                 }
             }
 
@@ -541,7 +540,7 @@ public final class SdkConnectorTester {
         }
     }
 
-    private static void displayFields(Field field, Scanner scanner, Map<String, String> config){
+    private static void displayField(Field field, Scanner scanner, Map<String, String> config){
         String description = field.getDescription();
         switch (field.getTypeCase()) {
             case TEXT_FIELD:
@@ -611,9 +610,9 @@ public final class SdkConnectorTester {
     }
 
     private static void addFormFieldsToDeque(Deque<FormField> deque, List<FormField> formFieldList){
-        int totalFormFields = formFieldList.size();
-        for(int i = totalFormFields-1;i>=0;i--){
-            deque.push(formFieldList.get(i));
+        int startIndex = formFieldList.size()-1;
+        for(int index = startIndex ; index >= 0; index--){
+            deque.push(formFieldList.get(index));
         }
     }
 
