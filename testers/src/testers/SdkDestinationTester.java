@@ -156,6 +156,23 @@ public final class SdkDestinationTester {
             }
         }
 
+        LOG.info("Getting destination capabilities");
+        CapabilitiesResponse response = client.capabilities();
+        System.out.println("History mode supported: " + response.getSupportsHistoryMode());
+        for(DataTypeMappingEntry dataTypeMappingEntry : response.getDataTypeMappingsList()) {
+            System.out.println("Fivetran Type " + dataTypeMappingEntry.getFivetranType().name());
+            boolean hasMapTo = dataTypeMappingEntry.hasMapTo();
+            if(hasMapTo) {
+                System.out.println("Destination Name " + dataTypeMappingEntry.getMapTo().getName());
+                boolean hasKeepSame = dataTypeMappingEntry.getMapTo().hasKeepSame();
+                if(hasKeepSame) {
+                    System.out.println("Keeps same " + dataTypeMappingEntry.getMapTo().getKeepSame());
+                } else {
+                    System.out.println("Destination type " + dataTypeMappingEntry.getMapTo().getMapTo().name());
+                }
+            }
+        }
+
         ObjectMapper mapper = new ObjectMapper();
         for (File file : filesList) {
             if (file.isFile() && !file.getName().equals(CONFIG_FILE) && file.getName().endsWith(".json")) {
