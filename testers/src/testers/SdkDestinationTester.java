@@ -680,7 +680,7 @@ public final class SdkDestinationTester {
 
     private static void delay() {
         try {
-            TimeUnit.MILLISECONDS.sleep(50);
+            TimeUnit.MILLISECONDS.sleep(1);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
